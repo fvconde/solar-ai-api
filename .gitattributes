@@ -1,0 +1,22 @@
+# Fim de linha normalizado em LF, no repositorio E no working tree.
+#
+# Sem isso, o core.autocrlf=true do Windows entrega CRLF ao fazer checkout.
+# CRLF nao atrapalha C#, Python ou markdown -- mas quebra qualquer .sh copiado
+# para dentro de um container Linux, com o erro "bad interpreter: no such file
+# or directory", que nao se parece nem um pouco com a causa. Como os tres
+# servicos rodam em container, a regra vale para os quatro repositorios.
+* text=auto eol=lf
+
+# Binarios: nunca converter.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.woff  binary
+*.woff2 binary
+
+# O Visual Studio reescreve o .sln em CRLF. Manter, para nao gerar diff fantasma.
+*.sln text eol=crlf
