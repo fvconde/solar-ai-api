@@ -39,6 +39,7 @@ services:
       # Host=postgres: dentro da rede do compose, o nome do servico e o DNS.
       # "localhost" aqui apontaria para o proprio container da API.
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      SOLAR_VERSION: ${SOLAR_VERSION:-dev}
     ports:
       - "8080:8080"
     depends_on:
