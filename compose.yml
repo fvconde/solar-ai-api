@@ -1,0 +1,49 @@
+# Fragmento do solar-ai-api: a API e o banco que ela possui.
+#
+# Roda sozinho -- `docker compose up` aqui sobe Postgres + API, sem precisar dos
+# outros repos. E o que o pipeline de CI/CD deste repositorio (S-27) vai usar.
+#
+# O ambiente completo dos tres servicos e montado pelo solar-ai-docs, que
+# inclui este arquivo. Sem `name:` de proposito: assim o projeto Compose e o de
+# quem inclui, e os servicos entram todos na mesma rede.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env do solar-ai-api}
+    ports:
+      # Exposto no host para dar para abrir com DBeaver/pgAdmin durante o dev.
+      - "5432:5432"
+    volumes:
+      # Volume nomeado: os dados sobrevivem a docker compose down.
+      # Para zerar o banco de verdade: docker compose down -v
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready ja vem na imagem. E o que permite a API esperar o banco
+      # estar ACEITANDO CONEXAO, e nao apenas o container ter iniciado --
+      # a diferenca entre os dois e de varios segundos no primeiro boot.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      # Relativo a ESTE arquivo, mesmo quando incluido de outro repo.
+      context: .
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # Host=postgres: dentro da rede do compose, o nome do servico e o DNS.
+      # "localhost" aqui apontaria para o proprio container da API.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

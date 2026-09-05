@@ -1,0 +1,11 @@
+# Segredos — nunca commitar
+.env
+.env.*
+!.env.example
+*.key
+
+# .NET
+bin/
+obj/
+.vs/
+*.user
