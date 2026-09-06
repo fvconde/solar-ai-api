@@ -29,12 +29,7 @@ public class TurnoController(
         {
             logger.LogError(ex, "Turno da conversa {ConversaId} falhou", requisicao.ConversaId);
 
-            return Problem(
-                statusCode: ex.TempoEsgotado
-                    ? StatusCodes.Status504GatewayTimeout
-                    : StatusCodes.Status502BadGateway,
-                title: "agente indisponivel",
-                detail: environment.IsDevelopment() ? ex.Message : null);
+            return this.Traduzir(ex, environment);
         }
     }
 }

@@ -28,9 +28,9 @@ public static class ProximasAcoes
 {
     public const string ContinuarConversa = "continuar_conversa";
     public const string SugerirImoveis = "sugerir_imoveis";
-    public const string AgendarVisita = "agendar_visita";
+    public const string AgendarReuniao = "agendar_reuniao";
+    public const string DirecionarEspecialista = "direcionar_especialista";
     public const string Encerrar = "encerrar";
-    public const string EscalarHumano = "escalar_humano";
 }
 
 public static class ContratoTurno
@@ -38,6 +38,7 @@ public static class ContratoTurno
     public const int LimiteMensagem = 4000;
     public const int LimiteHistorico = 50;
     public const int LimiteImoveis = 5;
+    public const int LimiteExpectativa = 200;
 }
 
 /// <summary>Uma mensagem ja trocada na conversa. Papel: lead ou agente.</summary>
@@ -57,6 +58,7 @@ public sealed record PerfilLead(
     int? Quartos = null,
     string? Regiao = null,
     string? Urgencia = null,
+    [StringLength(ContratoTurno.LimiteExpectativa)] string? ExpectativaRetorno = null,
     [Range(0, 100)] int? Score = null);
 
 /// <summary>O que este turno acrescentou ao perfil. Campo nulo = nao mencionado.</summary>
@@ -68,6 +70,7 @@ public sealed record CamposExtraidos(
     int? Quartos = null,
     string? Regiao = null,
     string? Urgencia = null,
+    [StringLength(ContratoTurno.LimiteExpectativa)] string? ExpectativaRetorno = null,
     [Range(0, 100)] int? Score = null);
 
 /// <summary>Imovel recomendado no turno, com o que a UI precisa para desenhar o card.</summary>

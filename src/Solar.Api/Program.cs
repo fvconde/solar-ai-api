@@ -1,4 +1,5 @@
 using Solar.Api.Agente;
+using Solar.Api.Conversas;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
+builder.Services.AddSingleton<ConversaStore>();
 
 builder.Services.AddHttpClient<AgenteClient>((servicos, http) =>
 {
