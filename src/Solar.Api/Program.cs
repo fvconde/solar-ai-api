@@ -1,6 +1,8 @@
 using Solar.Api.Agente;
 using Solar.Api.Conversas;
 
+const string PoliticaCorsFront = "front";
+
 var builder = WebApplication.CreateBuilder(args);
 
 // API baseada em controllers (ASP.NET Core MVC), nao minimal API: o dominio do
@@ -11,6 +13,11 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<ConversaStore>();
+
+builder.Services.AddCors(opcoes => opcoes.AddPolicy(PoliticaCorsFront, politica => politica
+    .WithOrigins(builder.Configuration.GetSection("Cors:Origens").Get<string[]>() ?? [])
+    .AllowAnyHeader()
+    .AllowAnyMethod()));
 
 builder.Services.AddHttpClient<AgenteClient>((servicos, http) =>
 {
@@ -24,6 +31,8 @@ var app = builder.Build();
 
 app.MapOpenApi();
 app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Solar API v1"));
+
+app.UseCors(PoliticaCorsFront);
 
 app.MapControllers();
 
