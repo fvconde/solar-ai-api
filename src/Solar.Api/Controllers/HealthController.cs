@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
-using Npgsql;
+using Microsoft.EntityFrameworkCore;
 using Solar.Api.Contracts;
+using Solar.Api.Persistencia;
 
 namespace Solar.Api.Controllers;
 
@@ -11,6 +12,7 @@ namespace Solar.Api.Controllers;
 [ApiController]
 [Produces("application/json")]
 public class HealthController(
+    SolarDbContext db,
     IConfiguration configuration,
     IHostEnvironment environment,
     ILogger<HealthController> logger) : ControllerBase
@@ -44,13 +46,11 @@ public class HealthController(
     {
         try
         {
-            // Conexao crua por enquanto. O acesso a dados de verdade (EF Core,
-            // repositorios, migrations) entra no S-06 -- aqui so precisa provar
-            // que a API alcanca o banco pelo DNS interno do compose.
-            await using var connection = new NpgsqlConnection(configuration.GetConnectionString("Postgres"));
-            await connection.OpenAsync(cancellationToken);
-            await using var command = new NpgsqlCommand("SELECT 1", connection);
-            await command.ExecuteScalarAsync(cancellationToken);
+            // Pelo DbContext, e nao por conexao crua: assim o /health prova a
+            // mesma configuracao que os endpoints usam. `CanConnectAsync` nao
+            // serve -- ele engole a excecao e devolve false, e o motivo da falha
+            // e metade do valor deste check.
+            await db.Database.ExecuteSqlRawAsync("SELECT 1", cancellationToken);
 
             return new HealthCheckResult(HealthStatus.Up);
         }

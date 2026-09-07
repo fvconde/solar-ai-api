@@ -14,6 +14,16 @@ RUN dotnet publish src/Solar.Api/Solar.Api.csproj -c Release -o /app/publish --n
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
+
+# O Npgsql sonda a biblioteca de Kerberos ao abrir a primeira conexao. A imagem
+# aspnet nao a carrega, e o que sai e um par de linhas em stderr que parece
+# falha de banco e nao e -- a conexao segue por senha e funciona. Instalar aqui
+# custa ~1 MB e tira do log de boot a unica linha que grita erro sem haver erro.
+# Antes do USER: apt precisa de root.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/publish .
 
 # Sem HTTPS dentro do container: o certificado de dev do .NET nao existe aqui e

@@ -1,5 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Solar.Api.Agente;
 using Solar.Api.Conversas;
+using Solar.Api.Persistencia;
 
 const string PoliticaCorsFront = "front";
 
@@ -12,7 +14,16 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
-builder.Services.AddSingleton<ConversaStore>();
+
+// Falhar aqui, e nao na primeira requisicao: sem string de conexao a API nao
+// tem o que fazer, e um 500 no primeiro turno esconderia um erro de ambiente.
+var conexaoPostgres = builder.Configuration.GetConnectionString("Postgres")
+    ?? throw new InvalidOperationException("ConnectionStrings__Postgres nao esta configurada.");
+
+builder.Services.AddDbContext<SolarDbContext>(opcoes => opcoes.UseNpgsql(conexaoPostgres));
+
+builder.Services.AddScoped<ConversaRepositorio>();
+builder.Services.AddSingleton<TravaDeConversas>();
 
 builder.Services.AddCors(opcoes => opcoes.AddPolicy(PoliticaCorsFront, politica => politica
     .WithOrigins(builder.Configuration.GetSection("Cors:Origens").Get<string[]>() ?? [])
@@ -28,6 +39,8 @@ builder.Services.AddHttpClient<AgenteClient>((servicos, http) =>
 });
 
 var app = builder.Build();
+
+await MigracaoDoBanco.AplicarAsync(app);
 
 app.MapOpenApi();
 app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Solar API v1"));

@@ -9,7 +9,8 @@ namespace Solar.Api.Controllers;
 [Route("conversas")]
 [Produces("application/json")]
 public class ConversasController(
-    ConversaStore conversas,
+    ConversaRepositorio conversas,
+    TravaDeConversas travas,
     AgenteClient agente,
     IConfiguration configuracao,
     IHostEnvironment environment,
@@ -33,20 +34,25 @@ public class ConversasController(
         NovaMensagemRequest requisicao,
         CancellationToken cancellationToken)
     {
-        var conversa = conversas.ObterOuCriar(id);
+        using var _ = await travas.TravarAsync(id, cancellationToken);
 
-        using var _ = await conversas.TravarAsync(id, cancellationToken);
+        var agora = DateTimeOffset.UtcNow;
+        var conversa = await conversas.ObterOuCriarAsync(id, agora, cancellationToken);
+        var historico = await conversas.HistoricoRecenteAsync(id, Janela, cancellationToken);
 
         var turno = new TurnoRequest(
             id,
             requisicao.Texto,
-            conversa.HistoricoRecente(Janela),
-            conversa.Perfil);
+            historico,
+            conversa.Lead.ParaContrato());
 
         TurnoResponse resposta;
 
         try
         {
+            // Fora de qualquer transacao de proposito: a chamada ao agente leva
+            // segundos e pode levar ate 45, e segurar conexao do pool durante
+            // isso esgotaria o banco muito antes de esgotar o Gemini.
             resposta = await agente.TurnoAsync(turno, cancellationToken);
         }
         catch (AgenteIndisponivelException erro)
@@ -56,14 +62,15 @@ public class ConversasController(
             return this.Traduzir(erro, environment);
         }
 
-        conversa.RegistrarTurno(requisicao.Texto, resposta, DateTimeOffset.UtcNow);
+        await conversas.RegistrarTurnoAsync(
+            conversa, requisicao.Texto, resposta, DateTimeOffset.UtcNow, cancellationToken);
 
         return Ok(new MensagemResponse(
             id,
             resposta.Resposta,
             resposta.Intencao,
             resposta.ProximaAcao,
-            conversa.Perfil,
+            conversa.Lead.ParaContrato(),
             resposta.ImoveisSugeridos));
     }
 
@@ -71,15 +78,17 @@ public class ConversasController(
     [HttpGet("{id:guid}")]
     [ProducesResponseType<ConversaResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
-    public ActionResult<ConversaResponse> Obter(Guid id)
+    public async Task<ActionResult<ConversaResponse>> Obter(Guid id, CancellationToken cancellationToken)
     {
-        var conversa = conversas.Obter(id);
+        var conversa = await conversas.ObterAsync(id, cancellationToken);
 
         if (conversa is null)
         {
             return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
         }
 
-        return Ok(new ConversaResponse(id, conversa.Perfil, conversa.Mensagens));
+        var mensagens = await conversas.HistoricoCompletoAsync(id, cancellationToken);
+
+        return Ok(new ConversaResponse(id, conversa.Lead.ParaContrato(), mensagens));
     }
 }
