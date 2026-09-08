@@ -48,6 +48,7 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             mensagem.HasKey(m => m.Id);
             mensagem.Property(m => m.Papel).HasMaxLength(10).IsRequired();
             mensagem.Property(m => m.Texto).HasMaxLength(ContratoTurno.LimiteMensagem).IsRequired();
+            mensagem.Property(m => m.ProximaAcao).HasMaxLength(30);
 
             mensagem.HasOne<Conversa>()
                 .WithMany(c => c.Mensagens)

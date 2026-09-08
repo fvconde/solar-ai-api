@@ -18,8 +18,24 @@ public sealed record MensagemResponse(
     PerfilLead PerfilLead,
     IReadOnlyList<ImovelSugerido> ImoveisSugeridos);
 
+/// <summary>
+/// Uma fala ja gravada, do jeito que a UI precisa para redesenhar a trilha.
+///
+/// <para>
+/// Nao e o <see cref="MensagemHistorico"/>: aquele e o contrato congelado que
+/// atravessa a fronteira para o agente, espelhado no Pydantic, e o agente nao
+/// tem uso para o desfecho de turnos passados. Este DTO existe so no .NET e
+/// pode crescer sem commit coordenado.
+/// </para>
+/// </summary>
+public sealed record MensagemDaConversa(
+    string Papel,
+    string Texto,
+    DateTimeOffset Em,
+    string? ProximaAcao);
+
 /// <summary>Estado completo de uma conversa.</summary>
 public sealed record ConversaResponse(
     Guid ConversaId,
     PerfilLead PerfilLead,
-    IReadOnlyList<MensagemHistorico> Mensagens);
+    IReadOnlyList<MensagemDaConversa> Mensagens);

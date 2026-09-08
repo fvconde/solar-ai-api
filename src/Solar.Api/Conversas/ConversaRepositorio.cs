@@ -63,12 +63,16 @@ public sealed class ConversaRepositorio(SolarDbContext db)
         return recentes;
     }
 
-    public Task<List<MensagemHistorico>> HistoricoCompletoAsync(Guid conversaId, CancellationToken cancellationToken) =>
+    /// <summary>
+    /// A conversa inteira para a UI redesenhar. Leva o <c>ProximaAcao</c>, que o
+    /// <see cref="MensagemHistorico"/> do turno nao carrega.
+    /// </summary>
+    public Task<List<MensagemDaConversa>> HistoricoCompletoAsync(Guid conversaId, CancellationToken cancellationToken) =>
         db.Mensagens
             .AsNoTracking()
             .Where(m => m.ConversaId == conversaId)
             .OrderBy(m => m.Id)
-            .Select(m => new MensagemHistorico(m.Papel, m.Texto, m.Em))
+            .Select(m => new MensagemDaConversa(m.Papel, m.Texto, m.Em, m.ProximaAcao))
             .ToListAsync(cancellationToken);
 
     /// <summary>

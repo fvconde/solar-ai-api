@@ -26,11 +26,29 @@ public sealed class Mensagem
 
     public DateTimeOffset Em { get; private set; }
 
-    public static Mensagem Nova(Guid conversaId, string papel, string texto, DateTimeOffset em) => new()
+    /// <summary>
+    /// O desfecho que o agente devolveu neste turno. Nulo nas falas do lead, e e
+    /// o que permite reconstruir os eventos da trilha ao recarregar a pagina.
+    /// Fora do <see cref="MensagemHistorico"/> de proposito: o agente nao precisa
+    /// do desfecho de turnos passados, e o contrato do /turn e espelhado no
+    /// Python.
+    /// </summary>
+    public string? ProximaAcao { get; private set; }
+
+    public static Mensagem DoLead(Guid conversaId, string texto, DateTimeOffset em) => new()
     {
         ConversaId = conversaId,
-        Papel = papel,
+        Papel = Papeis.Lead,
         Texto = texto,
+        Em = em,
+    };
+
+    public static Mensagem DaLia(Guid conversaId, string texto, string proximaAcao, DateTimeOffset em) => new()
+    {
+        ConversaId = conversaId,
+        Papel = Papeis.Agente,
+        Texto = texto,
+        ProximaAcao = proximaAcao,
         Em = em,
     };
 

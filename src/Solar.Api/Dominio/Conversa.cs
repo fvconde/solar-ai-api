@@ -55,8 +55,8 @@ public sealed class Conversa
     /// </summary>
     public void RegistrarTurno(string mensagemDoLead, TurnoResponse turno, DateTimeOffset em)
     {
-        _mensagens.Add(Mensagem.Nova(Id, Papeis.Lead, mensagemDoLead, em));
-        _mensagens.Add(Mensagem.Nova(Id, Papeis.Agente, turno.Resposta, em));
+        _mensagens.Add(Mensagem.DoLead(Id, mensagemDoLead, em));
+        _mensagens.Add(Mensagem.DaLia(Id, turno.Resposta, turno.ProximaAcao, em));
 
         Lead.Fundir(turno.Intencao, turno.CamposExtraidos, em);
 
