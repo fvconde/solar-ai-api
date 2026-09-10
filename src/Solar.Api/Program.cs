@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Solar.Api.Agendamentos;
 using Solar.Api.Agente;
 using Solar.Api.Conversas;
 using Solar.Api.Encaminhamentos;
@@ -25,6 +26,8 @@ builder.Services.AddDbContext<SolarDbContext>(opcoes => opcoes.UseNpgsql(conexao
 
 builder.Services.AddScoped<ConversaRepositorio>();
 builder.Services.AddScoped<EncaminhamentoRepositorio>();
+builder.Services.AddScoped<AgendaRepositorio>();
+builder.Services.AddScoped<GravacaoDoTurno>();
 builder.Services.AddSingleton<TravaDeConversas>();
 
 builder.Services.AddCors(opcoes => opcoes.AddPolicy(PoliticaCorsFront, politica => politica
@@ -43,6 +46,7 @@ builder.Services.AddHttpClient<AgenteClient>((servicos, http) =>
 var app = builder.Build();
 
 await MigracaoDoBanco.AplicarAsync(app);
+await AgendaInicial.GarantirAsync(app);
 
 app.MapOpenApi();
 app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Solar API v1"));

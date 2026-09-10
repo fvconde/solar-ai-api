@@ -92,6 +92,13 @@ public sealed record ImovelSugerido(
     int? PrecoAluguel,
     string Motivo);
 
+/// <summary>Horario livre do corretor atribuido que a Lia pode oferecer.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record SlotOferecido(
+    long Id,
+    DateTimeOffset Inicio,
+    DateTimeOffset Fim);
+
 /// <summary>Um turno de conversa entrando no agente.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record TurnoRequest(
@@ -100,7 +107,8 @@ public sealed record TurnoRequest(
     string Mensagem,
     [MaxLength(ContratoTurno.LimiteHistorico)]
     IReadOnlyList<MensagemHistorico> Historico,
-    PerfilLead PerfilLead);
+    PerfilLead PerfilLead,
+    IReadOnlyList<SlotOferecido> Agenda);
 
 /// <summary>Um turno de conversa saindo do agente.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -109,4 +117,5 @@ public sealed record TurnoResponse(
     string Intencao,
     CamposExtraidos CamposExtraidos,
     string ProximaAcao,
-    IReadOnlyList<ImovelSugerido> ImoveisSugeridos);
+    IReadOnlyList<ImovelSugerido> ImoveisSugeridos,
+    long? SlotEscolhido);

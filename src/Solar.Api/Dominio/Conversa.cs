@@ -69,4 +69,12 @@ public sealed class Conversa
 
         AtualizadaEm = em;
     }
+
+    public void RegistrarAgendamento(string status, long? slotId)
+    {
+        var ultimaResposta = _mensagens.LastOrDefault(mensagem => mensagem.Papel == Papeis.Agente)
+            ?? throw new InvalidOperationException("nao ha resposta da Lia para receber o agendamento");
+
+        ultimaResposta.RegistrarAgendamento(status, slotId);
+    }
 }

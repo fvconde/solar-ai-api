@@ -14,7 +14,7 @@ public sealed class ConversaRepositorio(SolarDbContext db)
     /// <summary>
     /// Traz a conversa com o lead, ou cria uma nova <b>sem gravar</b>. A conversa
     /// nova fica apenas rastreada pelo EF: quem a leva ao banco e o
-    /// <see cref="RegistrarTurnoAsync"/>. E o que preserva a invariante de que
+    /// <see cref="GravacaoDoTurno"/>. E o que preserva a invariante de que
     /// turno que falha nao deixa rastro -- nem conversa vazia.
     /// </summary>
     public async Task<Conversa> ObterOuCriarAsync(Guid id, DateTimeOffset em, CancellationToken cancellationToken)
@@ -74,14 +74,41 @@ public sealed class ConversaRepositorio(SolarDbContext db)
     public async Task<List<MensagemDaConversa>> HistoricoCompletoAsync(
         Guid conversaId,
         string? corretor,
+        IReadOnlyList<SlotOferecido> agendaAtual,
         CancellationToken cancellationToken)
     {
-        var mensagens = await db.Mensagens
+        var registros = await db.Mensagens
             .AsNoTracking()
             .Where(m => m.ConversaId == conversaId)
             .OrderBy(m => m.Id)
-            .Select(m => new MensagemDaConversa(m.Papel, m.Texto, m.Em, m.ProximaAcao, null))
+            .Select(m => new
+            {
+                m.Papel,
+                m.Texto,
+                m.Em,
+                m.ProximaAcao,
+                m.StatusAgendamento,
+                Horario = m.Slot == null
+                    ? null
+                    : new SlotOferecido(m.Slot.Id, m.Slot.Inicio, m.Slot.Fim),
+            })
             .ToListAsync(cancellationToken);
+
+        var mensagens = registros.Select(mensagem => new MensagemDaConversa(
+            mensagem.Papel,
+            mensagem.Texto,
+            mensagem.Em,
+            mensagem.ProximaAcao,
+            null,
+            mensagem.StatusAgendamento is null
+                ? null
+                : new AgendamentoDaConversa(
+                    mensagem.StatusAgendamento,
+                    mensagem.Horario,
+                    mensagem.StatusAgendamento == EstadosDoAgendamento.Indisponivel
+                        ? agendaAtual
+                        : [])))
+            .ToList();
 
         if (corretor is null)
         {
@@ -99,21 +126,6 @@ public sealed class ConversaRepositorio(SolarDbContext db)
     /// </summary>
     public void AplicarTurno(Conversa conversa, string mensagemDoLead, TurnoResponse turno, DateTimeOffset em) =>
         conversa.RegistrarTurno(mensagemDoLead, turno, em);
-
-    /// <summary>
-    /// Grava as duas mensagens do turno, o perfil fundido e, quando houve
-    /// handoff, o encaminhamento. Um unico <c>SaveChangesAsync</c>, que o EF ja
-    /// envolve em transacao: ou entra tudo, ou nao entra nada.
-    /// </summary>
-    public async Task SalvarTurnoAsync(Encaminhamento? encaminhamento, CancellationToken cancellationToken)
-    {
-        if (encaminhamento is not null)
-        {
-            db.Encaminhamentos.Add(encaminhamento);
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-    }
 
     /// <summary>
     /// Grava o contato e resolve a dedupe: o mesmo telefone ou e-mail visto em
