@@ -1,10 +1,15 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Solar.Api.Agendamentos;
 using Solar.Api.Agente;
 using Solar.Api.Conversas;
 using Solar.Api.Encaminhamentos;
 using Solar.Api.Persistencia;
 
 const string PoliticaCorsFront = "front";
+const string PoliticaRateLimitMensagens = "mensagens";
+const string PoliticaRateLimitExclusao = "exclusao";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,12 +30,43 @@ builder.Services.AddDbContext<SolarDbContext>(opcoes => opcoes.UseNpgsql(conexao
 
 builder.Services.AddScoped<ConversaRepositorio>();
 builder.Services.AddScoped<EncaminhamentoRepositorio>();
+builder.Services.AddScoped<AgendaRepositorio>();
+builder.Services.AddScoped<GravacaoDoTurno>();
 builder.Services.AddSingleton<TravaDeConversas>();
 
 builder.Services.AddCors(opcoes => opcoes.AddPolicy(PoliticaCorsFront, politica => politica
     .WithOrigins(builder.Configuration.GetSection("Cors:Origens").Get<string[]>() ?? [])
     .AllowAnyHeader()
     .AllowAnyMethod()));
+
+builder.Services.AddRateLimiter(opcoes =>
+{
+    opcoes.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    opcoes.AddPolicy(PoliticaRateLimitMensagens, httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonimo";
+        var limite = builder.Configuration.GetValue("RateLimiting:MensagensPorMinuto", 30);
+
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = limite,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+    opcoes.AddPolicy(PoliticaRateLimitExclusao, httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonimo";
+        var limite = builder.Configuration.GetValue("RateLimiting:ExclusoesPorMinuto", 10);
+
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = limite,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+});
 
 builder.Services.AddHttpClient<AgenteClient>((servicos, http) =>
 {
@@ -43,11 +79,13 @@ builder.Services.AddHttpClient<AgenteClient>((servicos, http) =>
 var app = builder.Build();
 
 await MigracaoDoBanco.AplicarAsync(app);
+await AgendaInicial.GarantirAsync(app);
 
 app.MapOpenApi();
 app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Solar API v1"));
 
 app.UseCors(PoliticaCorsFront);
+app.UseRateLimiter();
 
 app.MapControllers();
 

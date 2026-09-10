@@ -22,6 +22,18 @@ public sealed record ContatoRequest(
 /// </summary>
 public sealed record ContatoResponse(Guid LeadId);
 
+public static class EstadosDoAgendamento
+{
+    public const string Confirmado = "confirmado";
+    public const string Indisponivel = "indisponivel";
+}
+
+/// <summary>Fato do banco exibido como evento, separado da fala da Lia.</summary>
+public sealed record AgendamentoDaConversa(
+    string Estado,
+    SlotOferecido? Horario,
+    IReadOnlyList<SlotOferecido> Alternativas);
+
 /// <summary>Resposta da Lia a um turno, com o perfil ja atualizado.</summary>
 public sealed record MensagemResponse(
     Guid ConversaId,
@@ -31,7 +43,8 @@ public sealed record MensagemResponse(
     PerfilLead PerfilLead,
     IReadOnlyList<ImovelSugerido> ImoveisSugeridos,
     string? Corretor,
-    bool ContatoPendente);
+    bool ContatoPendente,
+    AgendamentoDaConversa? Agendamento);
 
 /// <summary>
 /// Uma fala ja gravada, do jeito que a UI precisa para redesenhar a trilha.
@@ -48,7 +61,8 @@ public sealed record MensagemDaConversa(
     string Texto,
     DateTimeOffset Em,
     string? ProximaAcao,
-    string? Corretor);
+    string? Corretor,
+    AgendamentoDaConversa? Agendamento);
 
 /// <summary>Estado completo de uma conversa.</summary>
 public sealed record ConversaResponse(
@@ -56,3 +70,38 @@ public sealed record ConversaResponse(
     PerfilLead PerfilLead,
     IReadOnlyList<MensagemDaConversa> Mensagens,
     bool ContatoPendente);
+
+/// <summary>Resultado da exclusao de dados do lead.</summary>
+public sealed record ExclusaoLeadResultado(
+    Guid LeadId,
+    int ConversasAfetadas,
+    int MensagensExcluidas,
+    DateTimeOffset RemovidoEm);
+
+/// <summary>Confirmacao de exclusao dos dados do lead por solicitacao LGPD.</summary>
+public sealed record ExclusaoLeadResponse(
+    Guid LeadId,
+    int ConversasAfetadas,
+    int MensagensExcluidas,
+    DateTimeOffset RemovidoEm,
+    string Escopo = "lead_e_vinculos",
+    string Mensagem = "Dados do lead e registros vinculados foram eliminados definitivamente.");
+
+/// <summary>Resultado interno da exclusao de conversa.</summary>
+public sealed record ExclusaoConversaResultado(
+    Guid ConversaId,
+    Guid LeadId,
+    bool LeadExcluido,
+    int MensagensExcluidas,
+    DateTimeOffset RemovidoEm,
+    string Escopo);
+
+/// <summary>Confirmacao de exclusao de conversa, com escopo e efeito no lead explicitados.</summary>
+public sealed record ExclusaoConversaResponse(
+    Guid ConversaId,
+    Guid LeadId,
+    bool LeadExcluido,
+    int MensagensExcluidas,
+    DateTimeOffset RemovidoEm,
+    string Escopo,
+    string Mensagem);

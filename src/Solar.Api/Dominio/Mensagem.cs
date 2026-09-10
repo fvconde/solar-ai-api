@@ -35,6 +35,12 @@ public sealed class Mensagem
     /// </summary>
     public string? ProximaAcao { get; private set; }
 
+    public string? StatusAgendamento { get; private set; }
+
+    public long? SlotId { get; private set; }
+
+    public Slot? Slot { get; private set; }
+
     public static Mensagem DoLead(Guid conversaId, string texto, DateTimeOffset em) => new()
     {
         ConversaId = conversaId,
@@ -51,6 +57,17 @@ public sealed class Mensagem
         ProximaAcao = proximaAcao,
         Em = em,
     };
+
+    public void RegistrarAgendamento(string status, long? slotId)
+    {
+        if (Papel != Papeis.Agente)
+        {
+            throw new InvalidOperationException("agendamento so pode pertencer a fala da Lia");
+        }
+
+        StatusAgendamento = status;
+        SlotId = slotId;
+    }
 
     public MensagemHistorico ParaContrato() => new(Papel, Texto, Em);
 }

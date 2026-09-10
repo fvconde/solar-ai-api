@@ -1,9 +1,13 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Solar.Api.Agendamentos;
 using Solar.Api.Agente;
 using Solar.Api.Contracts;
 using Solar.Api.Conversas;
 using Solar.Api.Dominio;
 using Solar.Api.Encaminhamentos;
+using Solar.Api.Seguranca;
 
 namespace Solar.Api.Controllers;
 
@@ -13,6 +17,8 @@ namespace Solar.Api.Controllers;
 public class ConversasController(
     ConversaRepositorio conversas,
     EncaminhamentoRepositorio encaminhamentos,
+    AgendaRepositorio agenda,
+    GravacaoDoTurno gravacao,
     TravaDeConversas travas,
     AgenteClient agente,
     IConfiguration configuracao,
@@ -28,6 +34,7 @@ public class ConversasController(
 
     /// <summary>Envia uma mensagem do lead e devolve a resposta da Lia.</summary>
     [HttpPost("{id:guid}/mensagens")]
+    [EnableRateLimiting("mensagens")]
     [ProducesResponseType<MensagemResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status502BadGateway)]
@@ -42,13 +49,16 @@ public class ConversasController(
         var agora = DateTimeOffset.UtcNow;
         var conversa = await conversas.ObterOuCriarAsync(id, agora, cancellationToken);
         var historico = await conversas.HistoricoRecenteAsync(id, Janela, cancellationToken);
+        var horariosOferecidos = await agenda.OfertarAsync(id, agora, cancellationToken);
 
         var turno = new TurnoRequest(
             id,
             requisicao.Texto,
             historico,
-            conversa.Lead.ParaContrato());
+            conversa.Lead.ParaContrato(),
+            horariosOferecidos);
 
+        var inicio = Stopwatch.GetTimestamp();
         TurnoResponse resposta;
 
         try
@@ -60,10 +70,16 @@ public class ConversasController(
         }
         catch (AgenteIndisponivelException erro)
         {
-            logger.LogError(erro, "Turno da conversa {ConversaId} falhou", id);
+            var latenciaFalha = Stopwatch.GetElapsedTime(inicio).TotalMilliseconds;
+            logger.LogError(erro, "Turno da conversa {ConversaId} falhou apos {LatenciaMs:F1}ms", id, latenciaFalha);
 
             return this.Traduzir(erro, environment);
         }
+
+        var latenciaMs = Stopwatch.GetElapsedTime(inicio).TotalMilliseconds;
+        logger.LogInformation(
+            "Turno concluido para conversa {ConversaId}. Intencao: {Intencao}, ProximaAcao: {ProximaAcao}, ImoveisSugeridos: {QtdImoveis}, LatenciaMs: {LatenciaMs:F1}",
+            id, resposta.Intencao, resposta.ProximaAcao, resposta.ImoveisSugeridos.Count, latenciaMs);
 
         var gravadoEm = DateTimeOffset.UtcNow;
 
@@ -72,7 +88,13 @@ public class ConversasController(
         var atribuicao = await encaminhamentos.DecidirAsync(
             conversa, resposta.ProximaAcao, gravadoEm, cancellationToken);
 
-        await conversas.SalvarTurnoAsync(atribuicao.Novo, cancellationToken);
+        var agendamento = await gravacao.SalvarAsync(
+            conversa,
+            atribuicao.Novo,
+            horariosOferecidos,
+            resposta.SlotEscolhido,
+            gravadoEm,
+            cancellationToken);
 
         return Ok(new MensagemResponse(
             id,
@@ -82,7 +104,8 @@ public class ConversasController(
             conversa.Lead.ParaContrato(),
             resposta.ImoveisSugeridos,
             atribuicao.Corretor,
-            !conversa.Lead.TemContato));
+            !conversa.Lead.TemContato,
+            agendamento));
     }
 
     /// <summary>Grava nome e contato do lead no momento do handoff.</summary>
@@ -129,9 +152,91 @@ public class ConversasController(
         }
 
         var corretor = await encaminhamentos.CorretorDaConversaAsync(id, cancellationToken);
-        var mensagens = await conversas.HistoricoCompletoAsync(id, corretor, cancellationToken);
+        var agendaAtual = await agenda.OfertarAsync(id, DateTimeOffset.UtcNow, cancellationToken);
+        var mensagens = await conversas.HistoricoCompletoAsync(
+            id, corretor, agendaAtual, cancellationToken);
 
         return Ok(new ConversaResponse(
             id, conversa.Lead.ParaContrato(), mensagens, !conversa.Lead.TemContato));
+    }
+
+    /// <summary>
+    /// Exclui uma conversa especifica. Por padrao (excluirLead=false), remove apenas a
+    /// conversa e suas mensagens/encaminhamentos, preservando o lead e eventuais outras
+    /// conversas. Se excluirLead=true for solicitado (direito de eliminacao LGPD completo),
+    /// exige autorizacao de privacidade e elimina o lead e todos os seus vinculos em cascata.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [EnableRateLimiting("exclusao")]
+    [ProducesResponseType<ExclusaoConversaResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ExclusaoConversaResponse>> Excluir(
+        Guid id,
+        [FromQuery] bool excluirLead = false,
+        CancellationToken cancellationToken = default)
+    {
+        var erroAuth = AutorizacaoPrivacidade.Validar(Request, configuracao, this);
+        if (erroAuth is not null)
+        {
+            return erroAuth;
+        }
+
+        if (excluirLead)
+        {
+            var conversa = await conversas.ObterAsync(id, cancellationToken);
+            if (conversa is null)
+            {
+                return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+            }
+
+            var conversaIds = await conversas.ObterIdsDeConversasDoLeadAsync(conversa.LeadId, cancellationToken);
+            var idsParaTravar = conversaIds.Append(conversa.LeadId);
+
+            using var _ = await travas.TravarMultiplasAsync(idsParaTravar, cancellationToken);
+
+            var resultadoLead = await conversas.ExcluirLeadAsync(conversa.LeadId, cancellationToken);
+            if (resultadoLead is null)
+            {
+                return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa ou lead nao encontrado");
+            }
+
+            logger.LogInformation(
+                "Conversa {ConversaId} e lead {LeadId} foram eliminados por solicitacao LGPD completa",
+                id, resultadoLead.LeadId);
+
+            return Ok(new ExclusaoConversaResponse(
+                id,
+                resultadoLead.LeadId,
+                LeadExcluido: true,
+                resultadoLead.MensagensExcluidas,
+                resultadoLead.RemovidoEm,
+                Escopo: "lead_e_vinculos",
+                Mensagem: "Lead e todas as conversas/registros vinculados foram eliminados definitivamente."));
+        }
+        else
+        {
+            using var _ = await travas.TravarAsync(id, cancellationToken);
+
+            var resultado = await conversas.ExcluirApenasConversaAsync(id, cancellationToken);
+            if (resultado is null)
+            {
+                return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+            }
+
+            logger.LogInformation(
+                "Conversa {ConversaId} excluida. Lead {LeadId} preservado",
+                id, resultado.LeadId);
+
+            return Ok(new ExclusaoConversaResponse(
+                id,
+                resultado.LeadId,
+                LeadExcluido: false,
+                resultado.MensagensExcluidas,
+                resultado.RemovidoEm,
+                Escopo: "apenas_conversa",
+                Mensagem: "Conversa e suas mensagens foram removidas. O lead e outras conversas permanecem preservados."));
+        }
     }
 }
