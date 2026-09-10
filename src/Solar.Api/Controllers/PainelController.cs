@@ -1,27 +1,42 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Solar.Api.Contracts;
 using Solar.Api.Dominio;
 using Solar.Api.Persistencia;
+using Solar.Api.Seguranca;
 
 namespace Solar.Api.Controllers;
 
 [ApiController]
 [Route("painel")]
+[EnableRateLimiting("painel")]
 [Produces("application/json")]
-public class PainelController(SolarDbContext db) : ControllerBase
+public class PainelController(
+    SolarDbContext db,
+    IConfiguration configuracao) : ControllerBase
 {
     public const string HeaderCorretorId = "X-Corretor-Id";
 
     /// <summary>
-    /// Lista os corretores ativos para a tela de identificação do painel.
-    /// Aberto para que o corretor possa selecionar sua identidade no acesso inicial.
+    /// Lista os corretores ativos para a seleção de perfil no painel.
+    /// Exige autorização de segurança/privacidade via cabeçalho X-Chave-Privacidade,
+    /// X-Admin-Key ou Bearer token (falha fechada com 503 se chave não configurada).
     /// </summary>
     [HttpGet("corretores")]
     [ProducesResponseType<IReadOnlyList<CorretorIdentificacao>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<IReadOnlyList<CorretorIdentificacao>>> ListarCorretoresAsync(
         CancellationToken cancellationToken)
     {
+        var erroAuth = AutorizacaoPrivacidade.Validar(Request, configuracao, this);
+        if (erroAuth is not null)
+        {
+            return erroAuth;
+        }
+
         var corretores = await db.Corretores
             .AsNoTracking()
             .Where(c => c.Ativo)
@@ -34,22 +49,33 @@ public class PainelController(SolarDbContext db) : ControllerBase
 
     /// <summary>
     /// Fila de leads com ordenação por score decrescente e filtros.
-    /// Exige identificação de corretor ativo via cabeçalho X-Corretor-Id.
-    /// Sem identificação, devolve 401 Unauthorized e nenhum dado (inclusive para chamadas via curl).
+    /// Exige autorização de segurança/privacidade (X-Chave-Privacidade) E
+    /// identificação de corretor ativo via cabeçalho X-Corretor-Id.
+    /// Sem autorização ou identificação, devolve erro 401/403 e nenhum dado.
     /// </summary>
     [HttpGet("leads")]
     [ProducesResponseType<FilaLeadsResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<FilaLeadsResponse>> ListarLeadsAsync(
         [FromHeader(Name = HeaderCorretorId)] string? corretorIdHeader,
         [FromQuery] string? intencao,
         [FromQuery] bool? meusLeads,
         CancellationToken cancellationToken)
     {
+        var erroAuth = AutorizacaoPrivacidade.Validar(Request, configuracao, this);
+        if (erroAuth is not null)
+        {
+            return erroAuth;
+        }
+
         if (string.IsNullOrWhiteSpace(corretorIdHeader) ||
             !Guid.TryParse(corretorIdHeader, out var corretorId))
         {
-            return Unauthorized(new { erro = "Identificação de corretor ativo obrigatória via cabeçalho X-Corretor-Id." });
+            return Problem(
+                statusCode: StatusCodes.Status401Unauthorized,
+                title: "Identificação de corretor ativo obrigatória via cabeçalho X-Corretor-Id.");
         }
 
         var corretorExiste = await db.Corretores
@@ -58,7 +84,9 @@ public class PainelController(SolarDbContext db) : ControllerBase
 
         if (!corretorExiste)
         {
-            return Unauthorized(new { erro = "Corretor não encontrado ou inativo." });
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Corretor não encontrado ou inativo.");
         }
 
         var leadsQuery = db.Leads.AsNoTracking();
@@ -108,8 +136,6 @@ public class PainelController(SolarDbContext db) : ControllerBase
                 lead.Status,
                 leadCorretorId,
                 leadCorretorNome,
-                lead.Telefone,
-                lead.Email,
                 lead.Regiao));
         }
 
