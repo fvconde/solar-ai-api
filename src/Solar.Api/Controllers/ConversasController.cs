@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Solar.Api.Agendamentos;
 using Solar.Api.Agente;
 using Solar.Api.Contracts;
 using Solar.Api.Conversas;
@@ -16,6 +17,8 @@ namespace Solar.Api.Controllers;
 public class ConversasController(
     ConversaRepositorio conversas,
     EncaminhamentoRepositorio encaminhamentos,
+    AgendaRepositorio agenda,
+    GravacaoDoTurno gravacao,
     TravaDeConversas travas,
     AgenteClient agente,
     IConfiguration configuracao,
@@ -46,12 +49,14 @@ public class ConversasController(
         var agora = DateTimeOffset.UtcNow;
         var conversa = await conversas.ObterOuCriarAsync(id, agora, cancellationToken);
         var historico = await conversas.HistoricoRecenteAsync(id, Janela, cancellationToken);
+        var horariosOferecidos = await agenda.OfertarAsync(id, agora, cancellationToken);
 
         var turno = new TurnoRequest(
             id,
             requisicao.Texto,
             historico,
-            conversa.Lead.ParaContrato());
+            conversa.Lead.ParaContrato(),
+            horariosOferecidos);
 
         var inicio = Stopwatch.GetTimestamp();
         TurnoResponse resposta;
@@ -83,7 +88,13 @@ public class ConversasController(
         var atribuicao = await encaminhamentos.DecidirAsync(
             conversa, resposta.ProximaAcao, gravadoEm, cancellationToken);
 
-        await conversas.SalvarTurnoAsync(atribuicao.Novo, cancellationToken);
+        var agendamento = await gravacao.SalvarAsync(
+            conversa,
+            atribuicao.Novo,
+            horariosOferecidos,
+            resposta.SlotEscolhido,
+            gravadoEm,
+            cancellationToken);
 
         return Ok(new MensagemResponse(
             id,
@@ -93,7 +104,8 @@ public class ConversasController(
             conversa.Lead.ParaContrato(),
             resposta.ImoveisSugeridos,
             atribuicao.Corretor,
-            !conversa.Lead.TemContato));
+            !conversa.Lead.TemContato,
+            agendamento));
     }
 
     /// <summary>Grava nome e contato do lead no momento do handoff.</summary>
@@ -140,7 +152,9 @@ public class ConversasController(
         }
 
         var corretor = await encaminhamentos.CorretorDaConversaAsync(id, cancellationToken);
-        var mensagens = await conversas.HistoricoCompletoAsync(id, corretor, cancellationToken);
+        var agendaAtual = await agenda.OfertarAsync(id, DateTimeOffset.UtcNow, cancellationToken);
+        var mensagens = await conversas.HistoricoCompletoAsync(
+            id, corretor, agendaAtual, cancellationToken);
 
         return Ok(new ConversaResponse(
             id, conversa.Lead.ParaContrato(), mensagens, !conversa.Lead.TemContato));

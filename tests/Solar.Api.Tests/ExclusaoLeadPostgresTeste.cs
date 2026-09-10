@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Solar.Api.Contracts;
 using Solar.Api.Conversas;
 using Solar.Api.Dominio;
@@ -8,119 +7,13 @@ using Solar.Api.Persistencia;
 
 namespace Solar.Api.Tests;
 
+[Collection(PostgresTestDatabase.CollectionName)]
 public class ExclusaoLeadPostgresTeste
 {
-    private const string NomeBancoTestesEsperado = "solar_test";
-
-    private static string ObterConexaoPostgresTest()
-    {
-        // 1. Variavel de ambiente especifica para banco de testes
-        var cs = Environment.GetEnvironmentVariable("ConnectionStrings__PostgresTest");
-        if (!string.IsNullOrWhiteSpace(cs))
-        {
-            ValidarBancoDedicado(cs);
-            return cs;
-        }
-
-        // 2. Le do arquivo .env local (gitignored) para montar a conexao com o banco dedicado
-        var envPath = LocalizarArquivoEnv();
-        if (envPath != null)
-        {
-            var linhas = File.ReadAllLines(envPath);
-            var user = linhas.FirstOrDefault(l => l.StartsWith("POSTGRES_USER="))?.Split('=', 2)[1].Trim() ?? "solar";
-            var pass = linhas.FirstOrDefault(l => l.StartsWith("POSTGRES_PASSWORD="))?.Split('=', 2)[1].Trim();
-
-            if (!string.IsNullOrWhiteSpace(pass))
-            {
-                var montada = $"Host=localhost;Port=5432;Database={NomeBancoTestesEsperado};Username={user};Password={pass}";
-                ValidarBancoDedicado(montada);
-                return montada;
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Configuracao para o banco de testes dedicado nao encontrada. " +
-            "Defina ConnectionStrings__PostgresTest ou certifique-se de que o arquivo .env contem POSTGRES_PASSWORD.");
-    }
-
-    private static void ValidarBancoDedicado(string connectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        if (string.Equals(builder.Database, "solar", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException(
-                "SEGURANCA: Os testes de integracao nao podem usar o banco de desenvolvimento 'solar'. " +
-                $"Utilize exclusivamente um banco descartavel dedicado (ex: '{NomeBancoTestesEsperado}').");
-        }
-    }
-
-    private static string? LocalizarArquivoEnv()
-    {
-        var dir = Directory.GetCurrentDirectory();
-        for (var i = 0; i < 6; i++)
-        {
-            if (string.IsNullOrEmpty(dir)) break;
-
-            var cand1 = Path.Combine(dir, ".env");
-            if (File.Exists(cand1)) return cand1;
-
-            var cand2 = Path.Combine(dir, "solar-ai-api", ".env");
-            if (File.Exists(cand2)) return cand2;
-
-            var pai = Directory.GetParent(dir);
-            if (pai == null) break;
-            dir = pai.FullName;
-        }
-        return null;
-    }
-
-    private static async Task<SolarDbContext> CriarContextoPostgresTestAsync()
-    {
-        string conexao;
-        try
-        {
-            conexao = ObterConexaoPostgresTest();
-        }
-        catch (Exception ex)
-        {
-            Assert.Fail($"Falha na resolucao da connection string de testes: {ex.Message}");
-            throw;
-        }
-
-        var options = new DbContextOptionsBuilder<SolarDbContext>()
-            .UseNpgsql(conexao)
-            .Options;
-
-        var db = new SolarDbContext(options);
-
-        // Nao permite passar silenciosamente/vacuamente se o banco estiver inacessivel:
-        // A integracao e obrigatoria e precisa executar e passar.
-        var podeConectar = false;
-        try
-        {
-            podeConectar = await db.Database.CanConnectAsync();
-        }
-        catch (Exception ex)
-        {
-            Assert.Fail($"Falha ao conectar ao banco de testes dedicado '{NomeBancoTestesEsperado}': {ex.Message}");
-        }
-
-        if (!podeConectar)
-        {
-            Assert.Fail($"Nao foi possivel conectar ao banco de testes dedicado '{NomeBancoTestesEsperado}'. " +
-                        "A validacao obrigatoria de integracao precisa executar e passar.");
-        }
-
-        // Garante que o banco de testes dedicado possui o schema atualizado com as migrations
-        await db.Database.MigrateAsync();
-
-        return db;
-    }
-
     [Fact]
     public async Task Postgres_Exclusao_do_lead_elimina_todas_tabelas_em_cascata_e_preserva_outro_lead()
     {
-        using var db = await CriarContextoPostgresTestAsync();
+        using var db = await PostgresTestDatabase.CriarContextoAsync();
         var repo = new ConversaRepositorio(db);
         var agora = DateTimeOffset.UtcNow;
 
@@ -141,7 +34,8 @@ public class ExclusaoLeadPostgresTeste
             Intencao: Intencoes.Compra,
             CamposExtraidos: new CamposExtraidos(Regiao: "Moema", PrecoMax: 1200000),
             ProximaAcao: ProximasAcoes.ContinuarConversa,
-            ImoveisSugeridos: []);
+            ImoveisSugeridos: [],
+            SlotEscolhido: null);
 
         repo.AplicarTurno(conversaA1, "Busco apartamento em Moema", turno, agora);
         repo.AplicarTurno(conversaA2, "Alguma cobertura disponível?", turno, agora);
@@ -192,7 +86,7 @@ public class ExclusaoLeadPostgresTeste
     [Fact]
     public async Task Postgres_Exclusao_apenas_conversa_preserva_lead_e_outra_conversa()
     {
-        using var db = await CriarContextoPostgresTestAsync();
+        using var db = await PostgresTestDatabase.CriarContextoAsync();
         var repo = new ConversaRepositorio(db);
         var agora = DateTimeOffset.UtcNow;
 
@@ -212,7 +106,8 @@ public class ExclusaoLeadPostgresTeste
             Intencao: Intencoes.Compra,
             CamposExtraidos: new CamposExtraidos(),
             ProximaAcao: ProximasAcoes.ContinuarConversa,
-            ImoveisSugeridos: []);
+            ImoveisSugeridos: [],
+            SlotEscolhido: null);
 
         repo.AplicarTurno(conversa1, "Mensagem C1", turno, agora);
         repo.AplicarTurno(conversa2, "Mensagem C2", turno, agora);
@@ -245,7 +140,7 @@ public class ExclusaoLeadPostgresTeste
     [Fact]
     public async Task Postgres_Concorrencia_Exclusao_coordena_travas_de_todas_conversas_do_lead()
     {
-        using var db = await CriarContextoPostgresTestAsync();
+        using var db = await PostgresTestDatabase.CriarContextoAsync();
         var repo = new ConversaRepositorio(db);
         var travas = new TravaDeConversas();
         var agora = DateTimeOffset.UtcNow;

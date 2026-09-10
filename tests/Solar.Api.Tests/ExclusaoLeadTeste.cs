@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Solar.Api.Agendamentos;
 using Solar.Api.Contracts;
 using Solar.Api.Controllers;
 using Solar.Api.Conversas;
@@ -48,6 +49,30 @@ public class ExclusaoLeadTeste
         return context;
     }
 
+    private static ConversasController CriarController(
+        SolarDbContext db,
+        ConversaRepositorio conversas,
+        EncaminhamentoRepositorio encaminhamentos,
+        TravaDeConversas travas,
+        IConfiguration configuracao,
+        DefaultHttpContext httpContext)
+    {
+        var agenda = new AgendaRepositorio(db);
+        return new ConversasController(
+            conversas,
+            encaminhamentos,
+            agenda,
+            new GravacaoDoTurno(db, agenda),
+            travas,
+            null!,
+            configuracao,
+            null!,
+            NullLogger<ConversasController>.Instance)
+        {
+            ControllerContext = new ControllerContext { HttpContext = httpContext }
+        };
+    }
+
     [Fact]
     public async Task Exclusao_do_lead_apaga_conversa_mensagens_e_encaminhamentos_em_cascata()
     {
@@ -65,7 +90,8 @@ public class ExclusaoLeadTeste
             Intencao: Intencoes.Compra,
             CamposExtraidos: new CamposExtraidos(Regiao: "Pinheiros", PrecoMax: 800000),
             ProximaAcao: ProximasAcoes.ContinuarConversa,
-            ImoveisSugeridos: []);
+            ImoveisSugeridos: [],
+            SlotEscolhido: null);
 
         repo.AplicarTurno(conversa, "Procuro apartamento em Pinheiros até 800k", turno, Agora);
 
@@ -117,7 +143,7 @@ public class ExclusaoLeadTeste
         conversa2.ReapontarLead(lead);
         db.Conversas.Add(conversa2);
 
-        var turno = new TurnoResponse("Olá", Intencoes.Compra, new CamposExtraidos(), ProximasAcoes.ContinuarConversa, []);
+        var turno = new TurnoResponse("Olá", Intencoes.Compra, new CamposExtraidos(), ProximasAcoes.ContinuarConversa, [], null);
         repo.AplicarTurno(conversa1, "Oi", turno, Agora);
         repo.AplicarTurno(conversa2, "Outro assunto", turno, Agora);
 
@@ -296,17 +322,8 @@ public class ExclusaoLeadTeste
         await repo.ObterOuCriarAsync(conversaId, Agora, default);
         await db.SaveChangesAsync();
 
-        var controller = new ConversasController(
-            repo,
-            encaminhamentosRepo,
-            travas,
-            null!,
-            config,
-            null!,
-            NullLogger<ConversasController>.Instance)
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+        var controller = CriarController(
+            db, repo, encaminhamentosRepo, travas, config, new DefaultHttpContext());
 
         // Sem header de autorizacao: deve falhar com 401 mesmo quando excluirLead = false
         var resposta = await controller.Excluir(conversaId, excluirLead: false, default);
@@ -328,17 +345,8 @@ public class ExclusaoLeadTeste
         await db.SaveChangesAsync();
 
         var httpContext = CriarHttpContextComHeader(AutorizacaoPrivacidade.HeaderChavePrivacidade, "chave-errada");
-        var controller = new ConversasController(
-            repo,
-            encaminhamentosRepo,
-            travas,
-            null!,
-            config,
-            null!,
-            NullLogger<ConversasController>.Instance)
-        {
-            ControllerContext = new ControllerContext { HttpContext = httpContext }
-        };
+        var controller = CriarController(
+            db, repo, encaminhamentosRepo, travas, config, httpContext);
 
         var resposta = await controller.Excluir(conversaId, excluirLead: false, default);
         var erro = Assert.IsType<ObjectResult>(resposta.Result);
@@ -359,17 +367,8 @@ public class ExclusaoLeadTeste
         await db.SaveChangesAsync();
 
         var httpContext = CriarHttpContextComHeader(AutorizacaoPrivacidade.HeaderChavePrivacidade, "qualquer-chave");
-        var controller = new ConversasController(
-            repo,
-            encaminhamentosRepo,
-            travas,
-            null!,
-            configSemChave,
-            null!,
-            NullLogger<ConversasController>.Instance)
-        {
-            ControllerContext = new ControllerContext { HttpContext = httpContext }
-        };
+        var controller = CriarController(
+            db, repo, encaminhamentosRepo, travas, configSemChave, httpContext);
 
         var resposta = await controller.Excluir(conversaId, excluirLead: false, default);
         var erro = Assert.IsType<ObjectResult>(resposta.Result);
@@ -396,22 +395,13 @@ public class ExclusaoLeadTeste
         conversa2.ReapontarLead(lead);
         db.Conversas.Add(conversa2);
 
-        var turno = new TurnoResponse("Olá", Intencoes.Compra, new CamposExtraidos(), ProximasAcoes.ContinuarConversa, []);
+        var turno = new TurnoResponse("Olá", Intencoes.Compra, new CamposExtraidos(), ProximasAcoes.ContinuarConversa, [], null);
         repo.AplicarTurno(conversa1, "Oi C1", turno, Agora);
         await db.SaveChangesAsync();
 
         var httpContext = CriarHttpContextComHeader(AutorizacaoPrivacidade.HeaderChavePrivacidade, ChaveTeste);
-        var controller = new ConversasController(
-            repo,
-            encaminhamentosRepo,
-            travas,
-            null!,
-            config,
-            null!,
-            NullLogger<ConversasController>.Instance)
-        {
-            ControllerContext = new ControllerContext { HttpContext = httpContext }
-        };
+        var controller = CriarController(
+            db, repo, encaminhamentosRepo, travas, config, httpContext);
 
         // DELETE com autorizacao: excluirLead = false
         var resposta = await controller.Excluir(conversa1Id, excluirLead: false, default);
@@ -449,23 +439,14 @@ public class ExclusaoLeadTeste
         conversa2.ReapontarLead(lead);
         db.Conversas.Add(conversa2);
 
-        var turno = new TurnoResponse("Olá", Intencoes.Compra, new CamposExtraidos(), ProximasAcoes.ContinuarConversa, []);
+        var turno = new TurnoResponse("Olá", Intencoes.Compra, new CamposExtraidos(), ProximasAcoes.ContinuarConversa, [], null);
         repo.AplicarTurno(conversa1, "Oi C1", turno, Agora);
         repo.AplicarTurno(conversa2, "Oi C2", turno, Agora);
         await db.SaveChangesAsync();
 
         var httpContext = CriarHttpContextComHeader(AutorizacaoPrivacidade.HeaderAdminKey, ChaveTeste);
-        var controller = new ConversasController(
-            repo,
-            encaminhamentosRepo,
-            travas,
-            null!,
-            config,
-            null!,
-            NullLogger<ConversasController>.Instance)
-        {
-            ControllerContext = new ControllerContext { HttpContext = httpContext }
-        };
+        var controller = CriarController(
+            db, repo, encaminhamentosRepo, travas, config, httpContext);
 
         var resposta = await controller.Excluir(conversa1Id, excluirLead: true, default);
         var ok = Assert.IsType<OkObjectResult>(resposta.Result);

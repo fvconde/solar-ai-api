@@ -16,6 +16,8 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
 
     public DbSet<Encaminhamento> Encaminhamentos => Set<Encaminhamento>();
 
+    public DbSet<Slot> Slots => Set<Slot>();
+
     protected override void OnModelCreating(ModelBuilder modelo)
     {
         modelo.Entity<Lead>(lead =>
@@ -78,6 +80,25 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             encaminhamento.HasIndex(e => e.CorretorId);
         });
 
+        modelo.Entity<Slot>(slot =>
+        {
+            slot.HasKey(s => s.Id);
+
+            slot.HasOne(s => s.Corretor)
+                .WithMany()
+                .HasForeignKey(s => s.CorretorId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Excluir um lead libera o horario; a agenda do corretor permanece.
+            slot.HasOne(s => s.Lead)
+                .WithMany()
+                .HasForeignKey(s => s.LeadId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            slot.HasIndex(s => new { s.CorretorId, s.Inicio }).IsUnique();
+            slot.HasIndex(s => s.LeadId);
+        });
+
         modelo.Entity<Conversa>(conversa =>
         {
             conversa.HasKey(c => c.Id);
@@ -102,11 +123,17 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             mensagem.Property(m => m.Papel).HasMaxLength(10).IsRequired();
             mensagem.Property(m => m.Texto).HasMaxLength(ContratoTurno.LimiteMensagem).IsRequired();
             mensagem.Property(m => m.ProximaAcao).HasMaxLength(30);
+            mensagem.Property(m => m.StatusAgendamento).HasMaxLength(20);
 
             mensagem.HasOne<Conversa>()
                 .WithMany(c => c.Mensagens)
                 .HasForeignKey(m => m.ConversaId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            mensagem.HasOne(m => m.Slot)
+                .WithMany()
+                .HasForeignKey(m => m.SlotId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // As duas consultas quentes -- ultimas N do POST e historico inteiro
             // do GET -- filtram por conversa e ordenam por id. O indice composto
