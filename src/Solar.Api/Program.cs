@@ -10,6 +10,7 @@ using Solar.Api.Persistencia;
 const string PoliticaCorsFront = "front";
 const string PoliticaRateLimitMensagens = "mensagens";
 const string PoliticaRateLimitExclusao = "exclusao";
+const string PoliticaRateLimitPainel = "painel";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -58,6 +59,18 @@ builder.Services.AddRateLimiter(opcoes =>
     {
         var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonimo";
         var limite = builder.Configuration.GetValue("RateLimiting:ExclusoesPorMinuto", 10);
+
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = limite,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+    opcoes.AddPolicy(PoliticaRateLimitPainel, httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonimo";
+        var limite = builder.Configuration.GetValue("RateLimiting:PainelPorMinuto", 60);
 
         return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
         {
