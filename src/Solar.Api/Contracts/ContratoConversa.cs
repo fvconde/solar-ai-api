@@ -56,3 +56,38 @@ public sealed record ConversaResponse(
     PerfilLead PerfilLead,
     IReadOnlyList<MensagemDaConversa> Mensagens,
     bool ContatoPendente);
+
+/// <summary>Resultado da exclusao de dados do lead.</summary>
+public sealed record ExclusaoLeadResultado(
+    Guid LeadId,
+    int ConversasAfetadas,
+    int MensagensExcluidas,
+    DateTimeOffset RemovidoEm);
+
+/// <summary>Confirmacao de exclusao dos dados do lead por solicitacao LGPD.</summary>
+public sealed record ExclusaoLeadResponse(
+    Guid LeadId,
+    int ConversasAfetadas,
+    int MensagensExcluidas,
+    DateTimeOffset RemovidoEm,
+    string Escopo = "lead_e_vinculos",
+    string Mensagem = "Dados do lead e registros vinculados foram eliminados definitivamente.");
+
+/// <summary>Resultado interno da exclusao de conversa.</summary>
+public sealed record ExclusaoConversaResultado(
+    Guid ConversaId,
+    Guid LeadId,
+    bool LeadExcluido,
+    int MensagensExcluidas,
+    DateTimeOffset RemovidoEm,
+    string Escopo);
+
+/// <summary>Confirmacao de exclusao de conversa, com escopo e efeito no lead explicitados.</summary>
+public sealed record ExclusaoConversaResponse(
+    Guid ConversaId,
+    Guid LeadId,
+    bool LeadExcluido,
+    int MensagensExcluidas,
+    DateTimeOffset RemovidoEm,
+    string Escopo,
+    string Mensagem);
