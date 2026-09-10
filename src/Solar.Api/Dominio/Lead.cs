@@ -2,6 +2,12 @@ using Solar.Api.Contracts;
 
 namespace Solar.Api.Dominio;
 
+public static class StatusDoLead
+{
+    public const string Novo = "novo";
+    public const string Encaminhado = "encaminhado";
+}
+
 /// <summary>
 /// A pessoa do outro lado da conversa e o que ja se sabe dela. Guarda o perfil
 /// qualificado -- intencao, faixa de preco, quartos, regiao, urgencia, score.
@@ -20,6 +26,16 @@ public sealed class Lead
     public Guid Id { get; private set; }
 
     public string? Nome { get; private set; }
+
+    /// <summary>
+    /// Digitos, sem mascara. Nunca entra no <see cref="PerfilLead"/>: o contrato
+    /// do turno nao tem campo para ele, e por isso nao ha caminho ate o modelo.
+    /// </summary>
+    public string? Telefone { get; private set; }
+
+    public string? Email { get; private set; }
+
+    public string Status { get; private set; } = StatusDoLead.Novo;
 
     public string? Intencao { get; private set; }
 
@@ -41,9 +57,12 @@ public sealed class Lead
 
     public DateTimeOffset AtualizadoEm { get; private set; }
 
+    public bool TemContato => Telefone is not null || Email is not null;
+
     public static Lead Novo(DateTimeOffset em) => new()
     {
         Id = Guid.CreateVersion7(em),
+        Status = StatusDoLead.Novo,
         CriadoEm = em,
         AtualizadoEm = em,
     };
@@ -64,6 +83,39 @@ public sealed class Lead
         Urgencia = extraidos.Urgencia ?? Urgencia;
         ExpectativaRetorno = extraidos.ExpectativaRetorno ?? ExpectativaRetorno;
         Score = extraidos.Score ?? Score;
+        AtualizadoEm = em;
+    }
+
+    /// <summary>Grava o que o formulario do handoff coletou, ja normalizado.</summary>
+    public void RegistrarContato(string? nome, string? telefone, string? email, DateTimeOffset em)
+    {
+        Nome = Contato.Nome(nome) ?? Nome;
+        Telefone = Contato.Telefone(telefone) ?? Telefone;
+        Email = Contato.Email(email) ?? Email;
+        AtualizadoEm = em;
+    }
+
+    /// <summary>
+    /// Traz para este lead o que a conversa recem-deduplicada ja sabia. Mesma
+    /// regra do <see cref="Fundir"/>: valor presente e informacao nova e vence.
+    /// </summary>
+    public void Absorver(Lead outro, DateTimeOffset em)
+    {
+        Nome = outro.Nome ?? Nome;
+        Intencao = outro.Intencao ?? Intencao;
+        PrecoMin = outro.PrecoMin ?? PrecoMin;
+        PrecoMax = outro.PrecoMax ?? PrecoMax;
+        Quartos = outro.Quartos ?? Quartos;
+        Regiao = outro.Regiao ?? Regiao;
+        Urgencia = outro.Urgencia ?? Urgencia;
+        ExpectativaRetorno = outro.ExpectativaRetorno ?? ExpectativaRetorno;
+        Score = outro.Score ?? Score;
+        AtualizadoEm = em;
+    }
+
+    public void MarcarEncaminhado(DateTimeOffset em)
+    {
+        Status = StatusDoLead.Encaminhado;
         AtualizadoEm = em;
     }
 

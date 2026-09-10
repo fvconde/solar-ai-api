@@ -49,6 +49,13 @@ public sealed class Conversa
         };
     }
 
+    /// <summary>Repassa esta conversa ao lead canonico depois da dedupe por contato.</summary>
+    public void ReapontarLead(Lead canonico)
+    {
+        Lead = canonico;
+        LeadId = canonico.Id;
+    }
+
     /// <summary>
     /// Grava as duas falas do turno e funde o perfil. So roda depois de o agente
     /// ter respondido: turno que falha nao deixa rastro.

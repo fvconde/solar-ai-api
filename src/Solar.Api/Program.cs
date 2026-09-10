@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Solar.Api.Agente;
 using Solar.Api.Conversas;
+using Solar.Api.Encaminhamentos;
 using Solar.Api.Persistencia;
 
 const string PoliticaCorsFront = "front";
@@ -23,6 +24,7 @@ var conexaoPostgres = builder.Configuration.GetConnectionString("Postgres")
 builder.Services.AddDbContext<SolarDbContext>(opcoes => opcoes.UseNpgsql(conexaoPostgres));
 
 builder.Services.AddScoped<ConversaRepositorio>();
+builder.Services.AddScoped<EncaminhamentoRepositorio>();
 builder.Services.AddSingleton<TravaDeConversas>();
 
 builder.Services.AddCors(opcoes => opcoes.AddPolicy(PoliticaCorsFront, politica => politica

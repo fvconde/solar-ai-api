@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Solar.Api.Agente;
 using Solar.Api.Contracts;
 using Solar.Api.Conversas;
+using Solar.Api.Dominio;
+using Solar.Api.Encaminhamentos;
 
 namespace Solar.Api.Controllers;
 
@@ -10,6 +12,7 @@ namespace Solar.Api.Controllers;
 [Produces("application/json")]
 public class ConversasController(
     ConversaRepositorio conversas,
+    EncaminhamentoRepositorio encaminhamentos,
     TravaDeConversas travas,
     AgenteClient agente,
     IConfiguration configuracao,
@@ -62,8 +65,14 @@ public class ConversasController(
             return this.Traduzir(erro, environment);
         }
 
-        await conversas.RegistrarTurnoAsync(
-            conversa, requisicao.Texto, resposta, DateTimeOffset.UtcNow, cancellationToken);
+        var gravadoEm = DateTimeOffset.UtcNow;
+
+        conversas.AplicarTurno(conversa, requisicao.Texto, resposta, gravadoEm);
+
+        var atribuicao = await encaminhamentos.DecidirAsync(
+            conversa, resposta.ProximaAcao, gravadoEm, cancellationToken);
+
+        await conversas.SalvarTurnoAsync(atribuicao.Novo, cancellationToken);
 
         return Ok(new MensagemResponse(
             id,
@@ -71,7 +80,39 @@ public class ConversasController(
             resposta.Intencao,
             resposta.ProximaAcao,
             conversa.Lead.ParaContrato(),
-            resposta.ImoveisSugeridos));
+            resposta.ImoveisSugeridos,
+            atribuicao.Corretor,
+            !conversa.Lead.TemContato));
+    }
+
+    /// <summary>Grava nome e contato do lead no momento do handoff.</summary>
+    [HttpPost("{id:guid}/contato")]
+    [ProducesResponseType<ContatoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ContatoResponse>> RegistrarContato(
+        Guid id,
+        ContatoRequest requisicao,
+        CancellationToken cancellationToken)
+    {
+        if (Contato.Telefone(requisicao.Telefone) is null && Contato.Email(requisicao.Email) is null)
+        {
+            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "informe telefone ou e-mail");
+        }
+
+        using var _ = await travas.TravarAsync(id, cancellationToken);
+
+        var conversa = await conversas.ObterParaEscritaAsync(id, cancellationToken);
+
+        if (conversa is null)
+        {
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+        }
+
+        var leadId = await conversas.RegistrarContatoAsync(
+            conversa, requisicao, DateTimeOffset.UtcNow, cancellationToken);
+
+        return Ok(new ContatoResponse(leadId));
     }
 
     /// <summary>Devolve o historico completo e o perfil acumulado da conversa.</summary>
@@ -87,8 +128,10 @@ public class ConversasController(
             return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
         }
 
-        var mensagens = await conversas.HistoricoCompletoAsync(id, cancellationToken);
+        var corretor = await encaminhamentos.CorretorDaConversaAsync(id, cancellationToken);
+        var mensagens = await conversas.HistoricoCompletoAsync(id, corretor, cancellationToken);
 
-        return Ok(new ConversaResponse(id, conversa.Lead.ParaContrato(), mensagens));
+        return Ok(new ConversaResponse(
+            id, conversa.Lead.ParaContrato(), mensagens, !conversa.Lead.TemContato));
     }
 }

@@ -33,6 +33,13 @@ public static class ProximasAcoes
     public const string Encerrar = "encerrar";
 }
 
+public static class ContratoContato
+{
+    public const int LimiteNome = 200;
+    public const int LimiteTelefone = 20;
+    public const int LimiteEmail = 200;
+}
+
 public static class ContratoTurno
 {
     public const int LimiteMensagem = 4000;

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Solar.Api.Contracts;
 using Solar.Api.Dominio;
+using Solar.Api.Encaminhamentos;
 using Solar.Api.Persistencia;
 
 namespace Solar.Api.Conversas;
@@ -35,6 +36,9 @@ public sealed class ConversaRepositorio(SolarDbContext db)
     public Task<Conversa?> ObterAsync(Guid id, CancellationToken cancellationToken) =>
         CarregarAsync(id, rastrear: false, cancellationToken);
 
+    public Task<Conversa?> ObterParaEscritaAsync(Guid id, CancellationToken cancellationToken) =>
+        CarregarAsync(id, rastrear: true, cancellationToken);
+
     /// <summary>
     /// Ultimas <paramref name="janela"/> mensagens, em ordem cronologica.
     ///
@@ -67,29 +71,118 @@ public sealed class ConversaRepositorio(SolarDbContext db)
     /// A conversa inteira para a UI redesenhar. Leva o <c>ProximaAcao</c>, que o
     /// <see cref="MensagemHistorico"/> do turno nao carrega.
     /// </summary>
-    public Task<List<MensagemDaConversa>> HistoricoCompletoAsync(Guid conversaId, CancellationToken cancellationToken) =>
-        db.Mensagens
+    public async Task<List<MensagemDaConversa>> HistoricoCompletoAsync(
+        Guid conversaId,
+        string? corretor,
+        CancellationToken cancellationToken)
+    {
+        var mensagens = await db.Mensagens
             .AsNoTracking()
             .Where(m => m.ConversaId == conversaId)
             .OrderBy(m => m.Id)
-            .Select(m => new MensagemDaConversa(m.Papel, m.Texto, m.Em, m.ProximaAcao))
+            .Select(m => new MensagemDaConversa(m.Papel, m.Texto, m.Em, m.ProximaAcao, null))
             .ToListAsync(cancellationToken);
 
+        if (corretor is null)
+        {
+            return mensagens;
+        }
+
+        return [.. mensagens.Select(m => EncaminhamentoRepositorio.EhHandoff(m.ProximaAcao)
+            ? m with { Corretor = corretor }
+            : m)];
+    }
+
     /// <summary>
-    /// Grava as duas mensagens do turno e o perfil fundido. Um unico
-    /// <c>SaveChangesAsync</c>, que o EF ja envolve em transacao: ou entram as
-    /// duas mensagens e o perfil novo, ou nao entra nada.
+    /// Aplica o turno em memoria. Separado da gravacao porque a escolha do
+    /// corretor le o perfil ja fundido -- intencao e regiao deste turno.
     /// </summary>
-    public async Task RegistrarTurnoAsync(
+    public void AplicarTurno(Conversa conversa, string mensagemDoLead, TurnoResponse turno, DateTimeOffset em) =>
+        conversa.RegistrarTurno(mensagemDoLead, turno, em);
+
+    /// <summary>
+    /// Grava as duas mensagens do turno, o perfil fundido e, quando houve
+    /// handoff, o encaminhamento. Um unico <c>SaveChangesAsync</c>, que o EF ja
+    /// envolve em transacao: ou entra tudo, ou nao entra nada.
+    /// </summary>
+    public async Task SalvarTurnoAsync(Encaminhamento? encaminhamento, CancellationToken cancellationToken)
+    {
+        if (encaminhamento is not null)
+        {
+            db.Encaminhamentos.Add(encaminhamento);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Grava o contato e resolve a dedupe: o mesmo telefone ou e-mail visto em
+    /// outra conversa traz esta conversa para o lead que ja existe, e o lead
+    /// provisorio desta conversa deixa de existir. E o que transforma base de
+    /// conversas em base de clientes.
+    /// </summary>
+    public async Task<Guid> RegistrarContatoAsync(
         Conversa conversa,
-        string mensagemDoLead,
-        TurnoResponse turno,
+        ContatoRequest dados,
         DateTimeOffset em,
         CancellationToken cancellationToken)
     {
-        conversa.RegistrarTurno(mensagemDoLead, turno, em);
+        var canonico = await CanonicoAsync(dados, cancellationToken);
+
+        if (canonico is null || canonico.Id == conversa.LeadId)
+        {
+            conversa.Lead.RegistrarContato(dados.Nome, dados.Telefone, dados.Email, em);
+
+            await db.SaveChangesAsync(cancellationToken);
+
+            return conversa.LeadId;
+        }
+
+        var orfao = conversa.Lead;
+
+        canonico.Absorver(orfao, em);
+        canonico.RegistrarContato(dados.Nome, dados.Telefone, dados.Email, em);
+
+        foreach (var encaminhamento in await db.Encaminhamentos
+            .Where(e => e.LeadId == orfao.Id)
+            .ToListAsync(cancellationToken))
+        {
+            encaminhamento.ReapontarLead(canonico.Id);
+        }
+
+        foreach (var outra in await db.Conversas
+            .Where(c => c.LeadId == orfao.Id)
+            .ToListAsync(cancellationToken))
+        {
+            outra.ReapontarLead(canonico);
+        }
+
+        db.Leads.Remove(orfao);
 
         await db.SaveChangesAsync(cancellationToken);
+
+        return canonico.Id;
+    }
+
+    private async Task<Lead?> CanonicoAsync(ContatoRequest dados, CancellationToken cancellationToken)
+    {
+        var telefone = Contato.Telefone(dados.Telefone);
+
+        if (telefone is not null)
+        {
+            var porTelefone = await db.Leads.FirstOrDefaultAsync(l => l.Telefone == telefone, cancellationToken);
+
+            if (porTelefone is not null)
+            {
+                return porTelefone;
+            }
+        }
+
+        var email = Contato.Email(dados.Email);
+
+        return email is null
+            ? null
+            : await db.Leads.FirstOrDefaultAsync(l => l.Email == email, cancellationToken);
     }
 
     /// <summary>

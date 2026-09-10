@@ -12,6 +12,10 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
 
     public DbSet<Mensagem> Mensagens => Set<Mensagem>();
 
+    public DbSet<Corretor> Corretores => Set<Corretor>();
+
+    public DbSet<Encaminhamento> Encaminhamentos => Set<Encaminhamento>();
+
     protected override void OnModelCreating(ModelBuilder modelo)
     {
         modelo.Entity<Lead>(lead =>
@@ -23,6 +27,55 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             lead.Property(l => l.Regiao).HasMaxLength(120);
             lead.Property(l => l.Urgencia).HasMaxLength(20);
             lead.Property(l => l.ExpectativaRetorno).HasMaxLength(ContratoTurno.LimiteExpectativa);
+            lead.Property(l => l.Telefone).HasMaxLength(Contato.LimiteTelefone);
+            lead.Property(l => l.Email).HasMaxLength(Contato.LimiteEmail);
+            lead.Property(l => l.Status).HasMaxLength(20).IsRequired().HasDefaultValue(StatusDoLead.Novo);
+
+            // Parcial porque quase todo lead nasce sem contato: sem o filtro, o
+            // segundo lead com telefone nulo violaria a unicidade.
+            lead.HasIndex(l => l.Telefone).IsUnique().HasFilter("telefone IS NOT NULL");
+            lead.HasIndex(l => l.Email).IsUnique().HasFilter("email IS NOT NULL");
+        });
+
+        modelo.Entity<Corretor>(corretor =>
+        {
+            corretor.HasKey(c => c.Id);
+            corretor.Property(c => c.Id).ValueGeneratedNever();
+            corretor.Property(c => c.Nome).HasMaxLength(200).IsRequired();
+            corretor.Property(c => c.Especialidade).HasMaxLength(20).IsRequired();
+            corretor.Property(c => c.ContatoInterno).HasMaxLength(200).IsRequired();
+            corretor.Property(c => c.Regioes).IsRequired();
+
+            corretor.HasIndex(c => new { c.Especialidade, c.Ativo });
+        });
+
+        modelo.Entity<Encaminhamento>(encaminhamento =>
+        {
+            encaminhamento.HasKey(e => e.Id);
+            encaminhamento.Property(e => e.Especialidade).HasMaxLength(20).IsRequired();
+            encaminhamento.Property(e => e.Status).HasMaxLength(20).IsRequired();
+
+            encaminhamento.HasOne<Conversa>()
+                .WithMany()
+                .HasForeignKey(e => e.ConversaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            encaminhamento.HasOne<Lead>()
+                .WithMany()
+                .HasForeignKey(e => e.LeadId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Restrict, e nao cascade: apagar corretor nao pode apagar o registro
+            // de que o lead foi encaminhado. Nao ha tela que apague corretor.
+            encaminhamento.HasOne(e => e.Corretor)
+                .WithMany()
+                .HasForeignKey(e => e.CorretorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Uma conversa encaminha uma vez: o indice unico faz disso estrutura,
+            // e nao disciplina do controller.
+            encaminhamento.HasIndex(e => e.ConversaId).IsUnique();
+            encaminhamento.HasIndex(e => e.CorretorId);
         });
 
         modelo.Entity<Conversa>(conversa =>

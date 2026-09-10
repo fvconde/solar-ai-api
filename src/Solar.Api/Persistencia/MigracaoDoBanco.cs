@@ -1,4 +1,6 @@
+using System.Net.Sockets;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Solar.Api.Persistencia;
 
@@ -44,7 +46,7 @@ public static class MigracaoDoBanco
 
                 return;
             }
-            catch (Exception erro) when (tentativa < Tentativas)
+            catch (Exception erro) when (EhIndisponibilidade(erro) && tentativa < Tentativas)
             {
                 // Nunca logar a excecao inteira aqui: a mensagem do Npgsql pode
                 // carregar a connection string, e ela tem a senha do banco.
@@ -53,6 +55,29 @@ public static class MigracaoDoBanco
 
                 await Task.Delay(Espera);
             }
+            catch (Exception erro) when (!EhIndisponibilidade(erro))
+            {
+                // Falha de modelo ou de migration nao melhora com nova tentativa,
+                // e a mensagem dela nao vem do Npgsql. So a mensagem do topo,
+                // nunca a excecao inteira: uma interna pode ser de conexao.
+                logger.LogCritical("Falha ao aplicar as migrations, e nao e indisponibilidade do banco. {Tipo}: {Mensagem}",
+                    erro.GetType().Name, erro.Message);
+
+                throw;
+            }
         }
     }
+
+    /// <summary>
+    /// Separa "o banco ainda nao subiu" de "a migration esta errada". Sem a
+    /// distincao as duas viram a mesma linha de log, e a segunda so aparece
+    /// depois de cinco tentativas -- com a palavra errada.
+    /// </summary>
+    public static bool EhIndisponibilidade(Exception erro) => erro switch
+    {
+        NpgsqlException npgsql => npgsql.IsTransient,
+        SocketException => true,
+        TimeoutException => true,
+        _ => erro.InnerException is not null && EhIndisponibilidade(erro.InnerException),
+    };
 }
