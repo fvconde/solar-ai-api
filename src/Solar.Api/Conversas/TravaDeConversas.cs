@@ -52,6 +52,47 @@ public sealed class TravaDeConversas
         return new Liberacao(() => Soltar(id, entrada, liberarSemaforo: true));
     }
 
+    /// <summary>
+    /// Adquire a trava de multiplos identificadores (por exemplo, todas as conversas
+    /// de um mesmo lead e o proprio lead) em ordem estavel (ordenada por GUID) para
+    /// evitar deadlocks entre exclusao e turnos concorrentes.
+    /// </summary>
+    public async Task<IDisposable> TravarMultiplasAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken)
+    {
+        var listaOrdenada = ids.Distinct().OrderBy(g => g).ToList();
+
+        if (listaOrdenada.Count == 0)
+        {
+            return new Liberacao(() => { });
+        }
+
+        if (listaOrdenada.Count == 1)
+        {
+            return await TravarAsync(listaOrdenada[0], cancellationToken);
+        }
+
+        var liberacoes = new List<IDisposable>(listaOrdenada.Count);
+
+        try
+        {
+            foreach (var id in listaOrdenada)
+            {
+                liberacoes.Add(await TravarAsync(id, cancellationToken));
+            }
+
+            return new LiberacaoMultipla(liberacoes);
+        }
+        catch
+        {
+            for (var i = liberacoes.Count - 1; i >= 0; i--)
+            {
+                liberacoes[i].Dispose();
+            }
+
+            throw;
+        }
+    }
+
     private void Soltar(Guid id, Entrada entrada, bool liberarSemaforo)
     {
         if (liberarSemaforo)
@@ -85,6 +126,22 @@ public sealed class TravaDeConversas
             if (Interlocked.Exchange(ref _liberado, 1) == 0)
             {
                 soltar();
+            }
+        }
+    }
+
+    private sealed class LiberacaoMultipla(List<IDisposable> liberacoes) : IDisposable
+    {
+        private int _liberado;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _liberado, 1) == 0)
+            {
+                for (var i = liberacoes.Count - 1; i >= 0; i--)
+                {
+                    liberacoes[i].Dispose();
+                }
             }
         }
     }
