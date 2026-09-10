@@ -199,4 +199,119 @@ public sealed class ConversaRepositorio(SolarDbContext db)
             ? consulta.FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
             : consulta.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
+
+    /// <summary>
+    /// Elimina definitivamente um lead e todos os seus registros vinculados
+    /// (conversas, mensagens, encaminhamentos) em atendimento a LGPD.
+    /// </summary>
+    public async Task<ExclusaoLeadResultado?> ExcluirLeadAsync(
+        Guid leadId,
+        CancellationToken cancellationToken)
+    {
+        var lead = await db.Leads.FirstOrDefaultAsync(l => l.Id == leadId, cancellationToken);
+
+        if (lead is null)
+        {
+            return null;
+        }
+
+        var conversas = await db.Conversas
+            .Where(c => c.LeadId == leadId)
+            .ToListAsync(cancellationToken);
+
+        var conversaIds = conversas.Select(c => c.Id).ToList();
+
+        var mensagens = await db.Mensagens
+            .Where(m => conversaIds.Contains(m.ConversaId))
+            .ToListAsync(cancellationToken);
+
+        var encaminhamentos = await db.Encaminhamentos
+            .Where(e => e.LeadId == leadId || conversaIds.Contains(e.ConversaId))
+            .ToListAsync(cancellationToken);
+
+        var totalMensagens = mensagens.Count;
+        var qtdConversas = conversas.Count;
+
+        db.Mensagens.RemoveRange(mensagens);
+        db.Encaminhamentos.RemoveRange(encaminhamentos);
+        db.Conversas.RemoveRange(conversas);
+        db.Leads.Remove(lead);
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new ExclusaoLeadResultado(leadId, qtdConversas, totalMensagens, DateTimeOffset.UtcNow);
+    }
+
+    /// <summary>
+    /// Retorna os IDs de todas as conversas vinculadas a um lead.
+    /// Utilizado para coordenar travas de concorrencia durante a exclusao de dados.
+    /// </summary>
+    public async Task<List<Guid>> ObterIdsDeConversasDoLeadAsync(
+        Guid leadId,
+        CancellationToken cancellationToken)
+    {
+        return await db.Conversas
+            .AsNoTracking()
+            .Where(c => c.LeadId == leadId)
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Elimina exclusivamente uma conversa especifica e seus registros dependentes
+    /// (mensagens e encaminhamentos vinculados), preservando o lead e eventuais
+    /// outras conversas vinculadas.
+    /// </summary>
+    public async Task<ExclusaoConversaResultado?> ExcluirApenasConversaAsync(
+        Guid conversaId,
+        CancellationToken cancellationToken)
+    {
+        var conversa = await db.Conversas.FirstOrDefaultAsync(c => c.Id == conversaId, cancellationToken);
+
+        if (conversa is null)
+        {
+            return null;
+        }
+
+        var mensagens = await db.Mensagens
+            .Where(m => m.ConversaId == conversaId)
+            .ToListAsync(cancellationToken);
+
+        var encaminhamentos = await db.Encaminhamentos
+            .Where(e => e.ConversaId == conversaId)
+            .ToListAsync(cancellationToken);
+
+        var totalMensagens = mensagens.Count;
+
+        db.Mensagens.RemoveRange(mensagens);
+        db.Encaminhamentos.RemoveRange(encaminhamentos);
+        db.Conversas.Remove(conversa);
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new ExclusaoConversaResultado(
+            conversaId,
+            conversa.LeadId,
+            LeadExcluido: false,
+            totalMensagens,
+            DateTimeOffset.UtcNow,
+            "apenas_conversa");
+    }
+
+    /// <summary>
+    /// Elimina o lead vinculado a uma conversa e todos os seus registros vinculados em cascata.
+    /// </summary>
+    public async Task<ExclusaoLeadResultado?> ExcluirPorConversaAsync(
+        Guid conversaId,
+        CancellationToken cancellationToken)
+    {
+        var conversa = await db.Conversas.FirstOrDefaultAsync(c => c.Id == conversaId, cancellationToken);
+
+        if (conversa is null)
+        {
+            return null;
+        }
+
+        return await ExcluirLeadAsync(conversa.LeadId, cancellationToken);
+    }
 }
