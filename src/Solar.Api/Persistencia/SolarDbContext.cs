@@ -32,6 +32,7 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             lead.Property(l => l.Telefone).HasMaxLength(Contato.LimiteTelefone);
             lead.Property(l => l.Email).HasMaxLength(Contato.LimiteEmail);
             lead.Property(l => l.Status).HasMaxLength(20).IsRequired().HasDefaultValue(StatusDoLead.Novo);
+            lead.Property(l => l.VersaoAvisoPrivacidade).HasMaxLength(AvisoPrivacidade.LimiteVersao);
 
             // Parcial porque quase todo lead nasce sem contato: sem o filtro, o
             // segundo lead com telefone nulo violaria a unicidade.

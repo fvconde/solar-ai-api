@@ -32,6 +32,37 @@ public class ConversasController(
         2,
         ContratoTurno.LimiteHistorico);
 
+    [HttpPost("{id:guid}/consentimento")]
+    [EnableRateLimiting("mensagens")]
+    [ProducesResponseType<ConsentimentoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ConsentimentoResponse>> RegistrarConsentimento(
+        Guid id,
+        ConsentimentoRequest requisicao,
+        CancellationToken cancellationToken)
+    {
+        if (requisicao.VersaoAvisoPrivacidade != AvisoPrivacidade.VersaoAtual)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "versao do aviso de privacidade invalida");
+        }
+
+        using var _ = await travas.TravarAsync(id, cancellationToken);
+
+        var conversa = await conversas.RegistrarConsentimentoAsync(
+            id,
+            requisicao.VersaoAvisoPrivacidade,
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+
+        return Ok(new ConsentimentoResponse(
+            conversa.Id,
+            conversa.LeadId,
+            conversa.Lead.ConsentimentoEm!.Value,
+            conversa.Lead.VersaoAvisoPrivacidade!));
+    }
+
     /// <summary>Envia uma mensagem do lead e devolve a resposta da Lia.</summary>
     [HttpPost("{id:guid}/mensagens")]
     [EnableRateLimiting("mensagens")]
@@ -39,6 +70,7 @@ public class ConversasController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status502BadGateway)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status504GatewayTimeout)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<MensagemResponse>> Enviar(
         Guid id,
         NovaMensagemRequest requisicao,
@@ -46,8 +78,16 @@ public class ConversasController(
     {
         using var _ = await travas.TravarAsync(id, cancellationToken);
 
+        var conversa = await conversas.ObterParaEscritaAsync(id, cancellationToken);
+
+        if (conversa?.Lead.TemConsentimento != true)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "consentimento de privacidade pendente");
+        }
+
         var agora = DateTimeOffset.UtcNow;
-        var conversa = await conversas.ObterOuCriarAsync(id, agora, cancellationToken);
         var historico = await conversas.HistoricoRecenteAsync(id, Janela, cancellationToken);
         var horariosOferecidos = await agenda.OfertarAsync(id, agora, cancellationToken);
 
@@ -157,7 +197,12 @@ public class ConversasController(
             id, corretor, agendaAtual, cancellationToken);
 
         return Ok(new ConversaResponse(
-            id, conversa.Lead.ParaContrato(), mensagens, !conversa.Lead.TemContato));
+            id,
+            conversa.Lead.ParaContrato(),
+            mensagens,
+            !conversa.Lead.TemContato,
+            conversa.Lead.ConsentimentoEm,
+            conversa.Lead.VersaoAvisoPrivacidade));
     }
 
     /// <summary>
