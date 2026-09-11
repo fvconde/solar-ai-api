@@ -35,6 +35,8 @@ public sealed class AgendaConcorrenciaPostgresTeste
             var repositorio = new ConversaRepositorio(preparacao);
             var primeira = await repositorio.ObterOuCriarAsync(conversaIds[0], DateTimeOffset.UtcNow, default);
             var segunda = await repositorio.ObterOuCriarAsync(conversaIds[1], DateTimeOffset.UtcNow, default);
+            primeira.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, DateTimeOffset.UtcNow);
+            segunda.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, DateTimeOffset.UtcNow);
             leadIds = [primeira.LeadId, segunda.LeadId];
 
             preparacao.Encaminhamentos.AddRange(

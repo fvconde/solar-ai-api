@@ -9,6 +9,23 @@ public sealed record NovaMensagemRequest(
     [StringLength(ContratoTurno.LimiteMensagem, MinimumLength = 1)]
     string Texto);
 
+public static class AvisoPrivacidade
+{
+    public const int LimiteVersao = 40;
+    public const string VersaoAtual = "2026-09-11";
+}
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ConsentimentoRequest(
+    [StringLength(AvisoPrivacidade.LimiteVersao, MinimumLength = 1)]
+    string VersaoAvisoPrivacidade);
+
+public sealed record ConsentimentoResponse(
+    Guid ConversaId,
+    Guid LeadId,
+    DateTimeOffset ConsentimentoEm,
+    string VersaoAvisoPrivacidade);
+
 /// <summary>Contato que o lead informa no handoff.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ContatoRequest(
@@ -69,7 +86,9 @@ public sealed record ConversaResponse(
     Guid ConversaId,
     PerfilLead PerfilLead,
     IReadOnlyList<MensagemDaConversa> Mensagens,
-    bool ContatoPendente);
+    bool ContatoPendente,
+    DateTimeOffset? ConsentimentoEm,
+    string? VersaoAvisoPrivacidade);
 
 /// <summary>Resultado da exclusao de dados do lead.</summary>
 public sealed record ExclusaoLeadResultado(

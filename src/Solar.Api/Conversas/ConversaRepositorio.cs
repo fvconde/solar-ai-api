@@ -39,6 +39,20 @@ public sealed class ConversaRepositorio(SolarDbContext db)
     public Task<Conversa?> ObterParaEscritaAsync(Guid id, CancellationToken cancellationToken) =>
         CarregarAsync(id, rastrear: true, cancellationToken);
 
+    public async Task<Conversa> RegistrarConsentimentoAsync(
+        Guid id,
+        string versaoAvisoPrivacidade,
+        DateTimeOffset em,
+        CancellationToken cancellationToken)
+    {
+        var conversa = await ObterOuCriarAsync(id, em, cancellationToken);
+
+        conversa.Lead.RegistrarConsentimento(versaoAvisoPrivacidade, em);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return conversa;
+    }
+
     /// <summary>
     /// Ultimas <paramref name="janela"/> mensagens, em ordem cronologica.
     ///
