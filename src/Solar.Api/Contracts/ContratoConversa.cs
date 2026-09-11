@@ -12,7 +12,7 @@ public sealed record NovaMensagemRequest(
 public static class AvisoPrivacidade
 {
     public const int LimiteVersao = 40;
-    public const string VersaoAtual = "2026-09-11.2";
+    public const string VersaoAtual = "2026-09-11";
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
