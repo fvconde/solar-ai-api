@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Solar.Api.Persistencia;
@@ -12,9 +13,11 @@ using Solar.Api.Persistencia;
 namespace Solar.Api.Persistencia.Migrations
 {
     [DbContext(typeof(SolarDbContext))]
-    partial class SolarDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260912183807_ImoveisSugeridosNaMensagem")]
+    partial class ImoveisSugeridosNaMensagem
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
