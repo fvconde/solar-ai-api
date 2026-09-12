@@ -340,4 +340,36 @@ public sealed class ConversaRepositorio(SolarDbContext db)
 
         return await ExcluirLeadAsync(conversa.LeadId, cancellationToken);
     }
+
+    public async Task<List<Guid>> ObterIdsInativasParaFollowUpAsync(
+        DateTimeOffset corteInatividade,
+        int limiteTentativas,
+        CancellationToken cancellationToken)
+    {
+        return await db.Conversas
+            .AsNoTracking()
+            .Where(c => c.AtualizadaEm <= corteInatividade
+                        && c.TentativasReengajamento < limiteTentativas
+                        && (c.Desfecho == null || (c.Desfecho != "encerrar" && c.Desfecho != "agendar_reuniao" && c.Desfecho != "direcionar_especialista"))
+                        && c.Lead.ConsentimentoEm != null
+                        && !db.Encaminhamentos.Any(e => e.ConversaId == c.Id)
+                        && db.Mensagens.Any(m => m.ConversaId == c.Id))
+            .OrderBy(c => c.AtualizadaEm)
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task GravarFollowUpAsync(
+        Conversa conversa,
+        TurnoResponse turno,
+        DateTimeOffset agora,
+        CancellationToken cancellationToken)
+    {
+        await using var transacao = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        conversa.RegistrarFollowUp(turno, agora);
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transacao.CommitAsync(cancellationToken);
+    }
 }

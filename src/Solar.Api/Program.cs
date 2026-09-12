@@ -34,6 +34,7 @@ builder.Services.AddScoped<EncaminhamentoRepositorio>();
 builder.Services.AddScoped<AgendaRepositorio>();
 builder.Services.AddScoped<GravacaoDoTurno>();
 builder.Services.AddSingleton<TravaDeConversas>();
+builder.Services.AddHostedService<ServicoDeReengajamento>();
 
 builder.Services.AddCors(opcoes => opcoes.AddPolicy(PoliticaCorsFront, politica => politica
     .WithOrigins(builder.Configuration.GetSection("Cors:Origens").Get<string[]>() ?? [])

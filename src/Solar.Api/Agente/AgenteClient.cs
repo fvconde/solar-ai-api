@@ -14,13 +14,25 @@ public sealed class AgenteClient(HttpClient http, ILogger<AgenteClient> logger)
 {
     private const string RotaTurno = "/turn";
 
-    public async Task<TurnoResponse> TurnoAsync(TurnoRequest requisicao, CancellationToken cancellationToken)
+    public Task<TurnoResponse> TurnoAsync(TurnoRequest requisicao, CancellationToken cancellationToken) =>
+        EnviarAsync(requisicao, followUp: false, cancellationToken);
+
+    public Task<TurnoResponse> ReengajarAsync(TurnoRequest requisicao, CancellationToken cancellationToken) =>
+        EnviarAsync(requisicao, followUp: true, cancellationToken);
+
+    private async Task<TurnoResponse> EnviarAsync(TurnoRequest requisicao, bool followUp, CancellationToken cancellationToken)
     {
         HttpResponseMessage resposta;
 
         try
         {
-            resposta = await http.PostAsJsonAsync(RotaTurno, requisicao, cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Post, RotaTurno);
+            request.Content = JsonContent.Create(requisicao);
+            if (followUp)
+            {
+                request.Headers.Add("X-Solar-Trigger", "follow-up");
+            }
+            resposta = await http.SendAsync(request, cancellationToken);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
