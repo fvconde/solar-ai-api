@@ -13,10 +13,10 @@ public sealed class ServicoDeReengajamento(
     private const int JanelaPadrao = 20;
 
     public TimeSpan IntervaloInatividade =>
-        configuracao.GetValue("FollowUp:IntervaloInatividade", TimeSpan.FromMinutes(2));
+        configuracao.GetValue("FollowUp:IntervaloInatividade", TimeSpan.FromHours(2));
 
     public TimeSpan IntervaloVarredura =>
-        configuracao.GetValue("FollowUp:IntervaloVarredura", TimeSpan.FromSeconds(30));
+        configuracao.GetValue("FollowUp:IntervaloVarredura", TimeSpan.FromMinutes(15));
 
     public int LimiteTentativas =>
         configuracao.GetValue("FollowUp:LimiteTentativas", 2);
