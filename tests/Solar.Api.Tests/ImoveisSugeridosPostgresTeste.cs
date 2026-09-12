@@ -151,4 +151,91 @@ public class ImoveisSugeridosPostgresTeste
         Assert.False(reader.GetBoolean(2)); // eh_vazio = false
         Assert.Equal(3, reader.GetInt32(3)); // jsonb_array_length = 3
     }
+
+    [Fact]
+    public async Task Postgres_Subtarefa3_HistoricoCompleto_preenche_imoveis_sugeridos_no_MensagemDaConversa()
+    {
+        using var db = await PostgresTestDatabase.CriarContextoAsync();
+        var repo = new ConversaRepositorio(db);
+        var agora = DateTimeOffset.UtcNow;
+
+        var conversaId = Guid.NewGuid();
+        var conversa = await repo.ObterOuCriarAsync(conversaId, agora, default);
+
+        var imovel1 = new ImovelSugerido("sp-01", "apartamento", "Pinheiros", 2, 60, 750000, 3500, "Perto de transporte");
+        var imovel2 = new ImovelSugerido("sp-02", "casa", "Butantã", 3, 120, 950000, 4200, "Espaço amplo com quintal");
+
+        var turno = new TurnoResponse(
+            Resposta: "Veja estes dois imóveis:",
+            Intencao: Intencoes.Compra,
+            CamposExtraidos: new CamposExtraidos(),
+            ProximaAcao: ProximasAcoes.ContinuarConversa,
+            ImoveisSugeridos: [imovel1, imovel2],
+            SlotEscolhido: null);
+
+        repo.AplicarTurno(conversa, "Busco 2 ou 3 quartos na zona oeste", turno, agora);
+        await db.SaveChangesAsync();
+
+        var historico = await repo.HistoricoCompletoAsync(conversaId, corretor: null, agendaAtual: [], default);
+
+        Assert.Equal(2, historico.Count);
+
+        // Mensagem 1: Lead
+        Assert.Equal(Papeis.Lead, historico[0].Papel);
+        Assert.Null(historico[0].ImoveisSugeridos);
+
+        // Mensagem 2: DaLia
+        Assert.Equal(Papeis.Agente, historico[1].Papel);
+        Assert.NotNull(historico[1].ImoveisSugeridos);
+        Assert.Equal(2, historico[1].ImoveisSugeridos!.Count);
+        Assert.Equal("sp-01", historico[1].ImoveisSugeridos![0].Id);
+        Assert.Equal("Perto de transporte", historico[1].ImoveisSugeridos![0].Motivo);
+        Assert.Equal("sp-02", historico[1].ImoveisSugeridos![1].Id);
+        Assert.Equal("Espaço amplo com quintal", historico[1].ImoveisSugeridos![1].Motivo);
+    }
+
+    [Fact]
+    public async Task Postgres_Subtarefa5_ObterImoveisSugeridosAsync_devolve_uniao_sem_duplicar_id()
+    {
+        using var db = await PostgresTestDatabase.CriarContextoAsync();
+        var repo = new ConversaRepositorio(db);
+        var agora = DateTimeOffset.UtcNow;
+
+        var conversaId = Guid.NewGuid();
+        var conversa = await repo.ObterOuCriarAsync(conversaId, agora, default);
+
+        var imovelA = new ImovelSugerido("imovel-A", "apto", "Moema", 2, 70, 800000, null, "Opção A");
+        var imovelB = new ImovelSugerido("imovel-B", "apto", "Moema", 3, 90, 1100000, null, "Opção B");
+        var imovelC = new ImovelSugerido("imovel-C", "apto", "Vila Mariana", 2, 65, 750000, null, "Opção C");
+
+        // Turno 1 recomenda [A, B]
+        var turno1 = new TurnoResponse(
+            Resposta: "Opções em Moema:",
+            Intencao: Intencoes.Compra,
+            CamposExtraidos: new CamposExtraidos(),
+            ProximaAcao: ProximasAcoes.ContinuarConversa,
+            ImoveisSugeridos: [imovelA, imovelB],
+            SlotEscolhido: null);
+        repo.AplicarTurno(conversa, "Busco em Moema", turno1, agora);
+
+        // Turno 2 recomenda [B, C] (B duplicado entre turnos)
+        var turno2 = new TurnoResponse(
+            Resposta: "Revisando com opção em Vila Mariana:",
+            Intencao: Intencoes.Compra,
+            CamposExtraidos: new CamposExtraidos(),
+            ProximaAcao: ProximasAcoes.ContinuarConversa,
+            ImoveisSugeridos: [imovelB, imovelC],
+            SlotEscolhido: null);
+        repo.AplicarTurno(conversa, "Aceito Vila Mariana também", turno2, agora.AddMinutes(2));
+
+        await db.SaveChangesAsync();
+
+        // Leitura agregada para o S-18
+        var imoveisAgregados = await repo.ObterImoveisSugeridosAsync(conversaId, default);
+
+        Assert.Equal(3, imoveisAgregados.Count);
+        Assert.Equal("imovel-A", imoveisAgregados[0].Id);
+        Assert.Equal("imovel-B", imoveisAgregados[1].Id);
+        Assert.Equal("imovel-C", imoveisAgregados[2].Id);
+    }
 }
