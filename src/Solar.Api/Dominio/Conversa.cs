@@ -32,6 +32,10 @@ public sealed class Conversa
 
     public DateTimeOffset AtualizadaEm { get; private set; }
 
+    public int TentativasReengajamento { get; private set; }
+
+    public string? Desfecho { get; private set; }
+
     public IReadOnlyList<Mensagem> Mensagens => _mensagens;
 
     public static Conversa Nova(Guid id, string canal, DateTimeOffset em)
@@ -46,6 +50,8 @@ public sealed class Conversa
             LeadId = lead.Id,
             CriadaEm = em,
             AtualizadaEm = em,
+            TentativasReengajamento = 0,
+            Desfecho = null,
         };
     }
 
@@ -67,7 +73,31 @@ public sealed class Conversa
 
         Lead.Fundir(turno.Intencao, turno.CamposExtraidos, em);
 
+        if (turno.ProximaAcao == "encerrar" || turno.ProximaAcao == "agendar_reuniao" || turno.ProximaAcao == "direcionar_especialista")
+        {
+            Desfecho = turno.ProximaAcao;
+        }
+
         AtualizadaEm = em;
+    }
+
+    public void RegistrarFollowUp(TurnoResponse turno, DateTimeOffset em)
+    {
+        _mensagens.Add(Mensagem.DaLia(Id, turno.Resposta, turno.ProximaAcao, em));
+
+        TentativasReengajamento++;
+
+        if (turno.ProximaAcao == "encerrar" || turno.ProximaAcao == "agendar_reuniao" || turno.ProximaAcao == "direcionar_especialista")
+        {
+            Desfecho = turno.ProximaAcao;
+        }
+
+        AtualizadaEm = em;
+    }
+
+    public void DefinirDesfecho(string desfecho)
+    {
+        Desfecho = desfecho;
     }
 
     public void RegistrarAgendamento(string status, long? slotId)

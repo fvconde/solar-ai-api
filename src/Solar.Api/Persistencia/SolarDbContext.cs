@@ -109,6 +109,8 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             // valor recebido.
             conversa.Property(c => c.Id).ValueGeneratedNever();
             conversa.Property(c => c.Canal).HasMaxLength(20).IsRequired();
+            conversa.Property(c => c.TentativasReengajamento).IsRequired().HasDefaultValue(0);
+            conversa.Property(c => c.Desfecho).HasMaxLength(30);
 
             conversa.HasOne(c => c.Lead)
                 .WithMany()
