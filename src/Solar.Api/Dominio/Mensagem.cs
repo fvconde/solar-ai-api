@@ -41,21 +41,36 @@ public sealed class Mensagem
 
     public Slot? Slot { get; private set; }
 
+    /// <summary>
+    /// Snapshot dos imoveis sugeridos pela Lia neste turno.
+    /// Invariante do card S-36: nulo nas falas do lead, lista (vazia ou com
+    /// itens) nas falas da Lia. Guarda o snapshot completo incluindo o motivo
+    /// contextual daquele turno, e nao apenas o ID.
+    /// </summary>
+    public List<ImovelSugerido>? ImoveisSugeridos { get; private set; }
+
     public static Mensagem DoLead(Guid conversaId, string texto, DateTimeOffset em) => new()
     {
         ConversaId = conversaId,
         Papel = Papeis.Lead,
         Texto = texto,
         Em = em,
+        ImoveisSugeridos = null,
     };
 
-    public static Mensagem DaLia(Guid conversaId, string texto, string proximaAcao, DateTimeOffset em) => new()
+    public static Mensagem DaLia(
+        Guid conversaId,
+        string texto,
+        string proximaAcao,
+        DateTimeOffset em,
+        IReadOnlyList<ImovelSugerido>? imoveisSugeridos = null) => new()
     {
         ConversaId = conversaId,
         Papel = Papeis.Agente,
         Texto = texto,
         ProximaAcao = proximaAcao,
         Em = em,
+        ImoveisSugeridos = imoveisSugeridos is null ? [] : [.. imoveisSugeridos],
     };
 
     public void RegistrarAgendamento(string status, long? slotId)

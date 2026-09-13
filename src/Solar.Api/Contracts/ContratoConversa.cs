@@ -79,7 +79,8 @@ public sealed record MensagemDaConversa(
     DateTimeOffset Em,
     string? ProximaAcao,
     string? Corretor,
-    AgendamentoDaConversa? Agendamento);
+    AgendamentoDaConversa? Agendamento,
+    IReadOnlyList<ImovelSugerido>? ImoveisSugeridos = null);
 
 /// <summary>Estado completo de uma conversa.</summary>
 public sealed record ConversaResponse(

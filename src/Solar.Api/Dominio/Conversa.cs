@@ -69,7 +69,7 @@ public sealed class Conversa
     public void RegistrarTurno(string mensagemDoLead, TurnoResponse turno, DateTimeOffset em)
     {
         _mensagens.Add(Mensagem.DoLead(Id, mensagemDoLead, em));
-        _mensagens.Add(Mensagem.DaLia(Id, turno.Resposta, turno.ProximaAcao, em));
+        _mensagens.Add(Mensagem.DaLia(Id, turno.Resposta, turno.ProximaAcao, em, turno.ImoveisSugeridos));
 
         Lead.Fundir(turno.Intencao, turno.CamposExtraidos, em);
 
@@ -83,7 +83,7 @@ public sealed class Conversa
 
     public void RegistrarFollowUp(TurnoResponse turno, DateTimeOffset em)
     {
-        _mensagens.Add(Mensagem.DaLia(Id, turno.Resposta, turno.ProximaAcao, em));
+        _mensagens.Add(Mensagem.DaLia(Id, turno.Resposta, turno.ProximaAcao, em, turno.ImoveisSugeridos));
 
         TentativasReengajamento++;
 

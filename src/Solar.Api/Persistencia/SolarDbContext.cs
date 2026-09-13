@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Solar.Api.Contracts;
 using Solar.Api.Dominio;
@@ -127,6 +128,11 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             mensagem.Property(m => m.Texto).HasMaxLength(ContratoTurno.LimiteMensagem).IsRequired();
             mensagem.Property(m => m.ProximaAcao).HasMaxLength(30);
             mensagem.Property(m => m.StatusAgendamento).HasMaxLength(20);
+            mensagem.Property(m => m.ImoveisSugeridos)
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<List<ImovelSugerido>>(v, (JsonSerializerOptions?)null));
 
             mensagem.HasOne<Conversa>()
                 .WithMany(c => c.Mensagens)

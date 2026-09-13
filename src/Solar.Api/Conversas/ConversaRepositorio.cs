@@ -102,6 +102,7 @@ public sealed class ConversaRepositorio(SolarDbContext db)
                 m.Em,
                 m.ProximaAcao,
                 m.StatusAgendamento,
+                m.ImoveisSugeridos,
                 Horario = m.Slot == null
                     ? null
                     : new SlotOferecido(m.Slot.Id, m.Slot.Inicio, m.Slot.Fim),
@@ -121,7 +122,8 @@ public sealed class ConversaRepositorio(SolarDbContext db)
                     mensagem.Horario,
                     mensagem.StatusAgendamento == EstadosDoAgendamento.Indisponivel
                         ? agendaAtual
-                        : [])))
+                        : []),
+            mensagem.ImoveisSugeridos))
             .ToList();
 
         if (corretor is null)
@@ -372,4 +374,44 @@ public sealed class ConversaRepositorio(SolarDbContext db)
         await db.SaveChangesAsync(cancellationToken);
         await transacao.CommitAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Devolve todos os imoveis sugeridos ao longo de toda a conversa, sem
+    /// duplicar ID, preservando a ordem cronologica da primeira recomendacao.
+    /// Utilizado pelo S-18 para compor a secao de imoveis de interesse no resumo.
+    /// </summary>
+    public async Task<IReadOnlyList<ImovelSugerido>> ObterImoveisSugeridosAsync(
+        Guid conversaId,
+        CancellationToken cancellationToken = default)
+    {
+        var mensagensComImoveis = await db.Mensagens
+            .AsNoTracking()
+            .Where(m => m.ConversaId == conversaId && m.ImoveisSugeridos != null)
+            .OrderBy(m => m.Id)
+            .Select(m => m.ImoveisSugeridos)
+            .ToListAsync(cancellationToken);
+
+        var vistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var resultado = new List<ImovelSugerido>();
+
+        foreach (var lista in mensagensComImoveis)
+        {
+            if (lista is null) continue;
+            foreach (var imovel in lista)
+            {
+                if (vistos.Add(imovel.Id))
+                {
+                    resultado.Add(imovel);
+                }
+            }
+        }
+
+        return resultado;
+    }
+
+    /// <summary>Alias semantico para <see cref="ObterImoveisSugeridosAsync"/>.</summary>
+    public Task<IReadOnlyList<ImovelSugerido>> ObterImoveisSugeridosDaConversaAsync(
+        Guid conversaId,
+        CancellationToken cancellationToken = default) =>
+        ObterImoveisSugeridosAsync(conversaId, cancellationToken);
 }
