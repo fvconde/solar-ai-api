@@ -90,6 +90,14 @@ builder.Services.AddHttpClient<AgenteClient>((servicos, http) =>
     http.Timeout = TimeSpan.FromSeconds(configuracao.GetValue("Agente:TimeoutSegundos", 30));
 });
 
+builder.Services.AddHttpClient<ResumoClient>((servicos, http) =>
+{
+    var configuracao = servicos.GetRequiredService<IConfiguration>();
+
+    http.BaseAddress = new Uri(configuracao["Agente:BaseUrl"] ?? "http://localhost:8000");
+    http.Timeout = TimeSpan.FromSeconds(configuracao.GetValue("Agente:TimeoutSegundos", 30));
+});
+
 var app = builder.Build();
 
 await MigracaoDoBanco.AplicarAsync(app);
