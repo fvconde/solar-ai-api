@@ -38,6 +38,8 @@ public sealed class Encaminhamento
 
     public void ReapontarLead(Guid canonicoId) => LeadId = canonicoId;
 
+    public void RegistrarResumo(ResumoResponse resumo) => Resumo = resumo;
+
     public static Encaminhamento Novo(
         Guid conversaId,
         Guid leadId,
