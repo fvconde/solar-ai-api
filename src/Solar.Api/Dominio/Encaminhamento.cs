@@ -1,3 +1,5 @@
+using Solar.Api.Contracts;
+
 namespace Solar.Api.Dominio;
 
 public static class StatusDoEncaminhamento
@@ -29,6 +31,8 @@ public sealed class Encaminhamento
     public string Especialidade { get; private set; } = Especialidades.Moradia;
 
     public string Status { get; private set; } = StatusDoEncaminhamento.Aguardando;
+
+    public ResumoResponse? Resumo { get; private set; }
 
     public DateTimeOffset Em { get; private set; }
 

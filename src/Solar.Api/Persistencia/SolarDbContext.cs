@@ -58,6 +58,11 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             encaminhamento.HasKey(e => e.Id);
             encaminhamento.Property(e => e.Especialidade).HasMaxLength(20).IsRequired();
             encaminhamento.Property(e => e.Status).HasMaxLength(20).IsRequired();
+            encaminhamento.Property(e => e.Resumo)
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<ResumoResponse>(v, (JsonSerializerOptions?)null));
 
             encaminhamento.HasOne<Conversa>()
                 .WithMany()
