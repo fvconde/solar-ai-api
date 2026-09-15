@@ -168,6 +168,12 @@ public class PainelTeste
         var lead = Lead.Novo(Agora);
         lead.Fundir(Intencoes.Compra, new CamposExtraidos(Nome: "Lead 100", Score: 100), Agora);
         db.Leads.Add(lead);
+        db.Encaminhamentos.Add(Encaminhamento.Novo(
+            Guid.NewGuid(),
+            lead.Id,
+            corretorId,
+            Especialidades.Moradia,
+            Agora));
         await db.SaveChangesAsync();
 
         var controller = CriarController(db);
@@ -177,12 +183,12 @@ public class PainelTeste
 
         // O controller de fila usa a identidade da sessao, nao um header externo.
         var fila = await CriarController(db, corretorId)
-            .ListarLeadsAsync(Intencoes.Compra, meusLeads: null, default);
+            .ListarLeadsAsync(filtro: "meus_leads", intencao: Intencoes.Compra, default);
         var ok = Assert.IsType<OkObjectResult>(fila.Result);
         var resposta = Assert.IsType<FilaLeadsResponse>(ok.Value);
 
-        Assert.Single(resposta.Leads);
-        Assert.Equal("Lead 100", resposta.Leads[0].Nome);
+        Assert.Single(resposta.Itens);
+        Assert.Equal("Lead 100", resposta.Itens[0].NomeExibicao);
     }
 
     [Fact]
@@ -253,7 +259,8 @@ public class PainelTeste
 
         var resultado = await controller.ListarLeadsAsync(null, null, default);
 
-        Assert.IsType<UnauthorizedResult>(resultado.Result);
+        var erro = Assert.IsType<UnauthorizedObjectResult>(resultado.Result);
+        Assert.Equal(new ErroPainelResponse("sessao_invalida"), erro.Value);
     }
 
     [Fact]
@@ -297,8 +304,11 @@ public class PainelTeste
         using var db = CriarBanco();
         var corretorAId = Guid.NewGuid();
         var corretorBId = Guid.NewGuid();
+        var corretorA = CriarCorretor(corretorAId, "Helena Braga", "helena@solar.com");
+        typeof(Corretor).GetProperty(nameof(Corretor.Perfil))!
+            .SetValue(corretorA, PerfisDoPainel.Supervisor);
         db.Corretores.AddRange(
-            CriarCorretor(corretorAId, "Helena Braga", "helena@solar.com"),
+            corretorA,
             CriarCorretor(corretorBId, "Rafael Nunes", "rafael@solar.com"));
 
         var leadA = Lead.Novo(Agora.AddMinutes(-2));
@@ -311,14 +321,14 @@ public class PainelTeste
         await db.SaveChangesAsync();
 
         var controller = CriarController(db, corretorAId);
-        var geral = await controller.ListarLeadsAsync(null, false, default);
+        var geral = await controller.ListarLeadsAsync("visao_geral", null, default);
         var filaGeral = Assert.IsType<FilaLeadsResponse>(Assert.IsType<OkObjectResult>(geral.Result).Value);
-        Assert.Equal(new[] { "Lead B", "Lead A" }, filaGeral.Leads.Select(l => l.Nome));
+        Assert.Equal(new[] { "Lead B", "Lead A" }, filaGeral.Itens.Select(l => l.NomeExibicao));
 
-        var meus = await controller.ListarLeadsAsync(null, true, default);
+        var meus = await controller.ListarLeadsAsync("minha_fila", null, default);
         var filaMeus = Assert.IsType<FilaLeadsResponse>(Assert.IsType<OkObjectResult>(meus.Result).Value);
-        Assert.Single(filaMeus.Leads);
-        Assert.Equal("Lead A", filaMeus.Leads[0].Nome);
+        Assert.Single(filaMeus.Itens);
+        Assert.Equal("Lead A", filaMeus.Itens[0].NomeExibicao);
     }
 
     private sealed class EnviadorEmailDeTeste : IEnviadorEmail

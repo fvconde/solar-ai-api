@@ -51,6 +51,13 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             corretor.Property(c => c.Id).ValueGeneratedNever();
             corretor.Property(c => c.Nome).HasMaxLength(200).IsRequired();
             corretor.Property(c => c.Especialidade).HasMaxLength(20).IsRequired();
+            corretor.Property(c => c.Perfil)
+                .HasMaxLength(20)
+                .IsRequired()
+                .HasDefaultValue(PerfisDoPainel.Corretor);
+            corretor.Property(c => c.VinculoAtivo)
+                .IsRequired()
+                .HasDefaultValue(true);
             corretor.Property(c => c.ContatoInterno).HasMaxLength(200).IsRequired();
             corretor.Property(c => c.Email).HasMaxLength(320).IsRequired();
             corretor.Property(c => c.EmailNormalizado).HasMaxLength(320).IsRequired();
