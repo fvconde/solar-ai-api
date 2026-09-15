@@ -15,6 +15,10 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
 
     public DbSet<Corretor> Corretores => Set<Corretor>();
 
+    public DbSet<SessaoCorretor> Sessoes => Set<SessaoCorretor>();
+
+    public DbSet<RecuperacaoSenha> RecuperacoesSenha => Set<RecuperacaoSenha>();
+
     public DbSet<Encaminhamento> Encaminhamentos => Set<Encaminhamento>();
 
     public DbSet<Slot> Slots => Set<Slot>();
@@ -48,9 +52,48 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             corretor.Property(c => c.Nome).HasMaxLength(200).IsRequired();
             corretor.Property(c => c.Especialidade).HasMaxLength(20).IsRequired();
             corretor.Property(c => c.ContatoInterno).HasMaxLength(200).IsRequired();
+            corretor.Property(c => c.Email).HasMaxLength(320).IsRequired();
+            corretor.Property(c => c.EmailNormalizado).HasMaxLength(320).IsRequired();
+            corretor.Property(c => c.SenhaHash).HasMaxLength(500);
+            corretor.Property(c => c.TentativasSenha).HasDefaultValue(0).IsRequired();
             corretor.Property(c => c.Regioes).IsRequired();
 
             corretor.HasIndex(c => new { c.Especialidade, c.Ativo });
+            corretor.HasIndex(c => c.EmailNormalizado).IsUnique();
+        });
+
+        modelo.Entity<SessaoCorretor>(sessao =>
+        {
+            sessao.HasKey(s => s.Id);
+            sessao.Property(s => s.TokenHash)
+                .HasColumnType("bytea")
+                .HasMaxLength(32)
+                .IsRequired();
+
+            sessao.HasOne(s => s.Corretor)
+                .WithMany()
+                .HasForeignKey(s => s.CorretorId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            sessao.HasIndex(s => s.TokenHash).IsUnique();
+            sessao.HasIndex(s => s.CorretorId);
+        });
+
+        modelo.Entity<RecuperacaoSenha>(recuperacao =>
+        {
+            recuperacao.HasKey(r => r.Id);
+            recuperacao.Property(r => r.TokenHash)
+                .HasColumnType("bytea")
+                .HasMaxLength(32)
+                .IsRequired();
+
+            recuperacao.HasOne(r => r.Corretor)
+                .WithMany()
+                .HasForeignKey(r => r.CorretorId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            recuperacao.HasIndex(r => r.TokenHash).IsUnique();
+            recuperacao.HasIndex(r => r.CorretorId);
         });
 
         modelo.Entity<Encaminhamento>(encaminhamento =>
