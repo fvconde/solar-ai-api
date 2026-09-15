@@ -80,6 +80,8 @@ internal static class PostgresTestDatabase
             "Defina ConnectionStrings__PostgresTest ou certifique-se de que o arquivo .env contem POSTGRES_PASSWORD.");
     }
 
+    internal static string ObterConexaoParaAplicacao() => ObterConexao();
+
     private static void ValidarBancoDedicado(string connectionString)
     {
         var builder = new NpgsqlConnectionStringBuilder(connectionString);

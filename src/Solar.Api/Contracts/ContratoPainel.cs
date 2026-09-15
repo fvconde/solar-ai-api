@@ -27,3 +27,24 @@ public sealed record LeadPainelItem(
 public sealed record FilaLeadsResponse(
     IReadOnlyList<LeadPainelItem> Leads,
     int Total);
+public sealed record IdentificacaoPainelRequest(string? Email);
+
+public sealed record IdentificacaoPainelResponse(bool Cadastrado);
+
+public sealed record SessaoPainelRequest(string? Email, string? Senha);
+
+public sealed record CorretorPainelResponse(Guid Id, string Nome, string Especialidade);
+
+public sealed record SessaoPainelResponse(CorretorPainelResponse Corretor);
+
+public sealed record TentativasRestantesResponse(int TentativasRestantes);
+
+public sealed record BloqueadoPorSegundosResponse(int BloqueadoPorSegundos);
+
+public sealed record RecuperacaoSenhaRequest(string? Email);
+
+public sealed record RecuperacaoSenhaTokenResponse(string Email);
+
+public sealed record NovaSenhaPainelRequest(string? Token, string? NovaSenha);
+
+public sealed record ErroPainelResponse(string Erro);
