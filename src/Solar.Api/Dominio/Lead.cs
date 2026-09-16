@@ -57,7 +57,13 @@ public sealed class Lead
 
     public DateTimeOffset AtualizadoEm { get; private set; }
 
+    public DateTimeOffset? ConsentimentoEm { get; private set; }
+
+    public string? VersaoAvisoPrivacidade { get; private set; }
+
     public bool TemContato => Telefone is not null || Email is not null;
+
+    public bool TemConsentimento => ConsentimentoEm is not null && VersaoAvisoPrivacidade is not null;
 
     public static Lead Novo(DateTimeOffset em) => new()
     {
@@ -95,6 +101,18 @@ public sealed class Lead
         AtualizadoEm = em;
     }
 
+    public void RegistrarConsentimento(string versaoAvisoPrivacidade, DateTimeOffset em)
+    {
+        if (VersaoAvisoPrivacidade == versaoAvisoPrivacidade && ConsentimentoEm is not null)
+        {
+            return;
+        }
+
+        ConsentimentoEm = em;
+        VersaoAvisoPrivacidade = versaoAvisoPrivacidade;
+        AtualizadoEm = em;
+    }
+
     /// <summary>
     /// Traz para este lead o que a conversa recem-deduplicada ja sabia. Mesma
     /// regra do <see cref="Fundir"/>: valor presente e informacao nova e vence.
@@ -110,6 +128,14 @@ public sealed class Lead
         Urgencia = outro.Urgencia ?? Urgencia;
         ExpectativaRetorno = outro.ExpectativaRetorno ?? ExpectativaRetorno;
         Score = outro.Score ?? Score;
+
+        if (outro.TemConsentimento &&
+            (!TemConsentimento || outro.ConsentimentoEm!.Value > ConsentimentoEm!.Value))
+        {
+            ConsentimentoEm = outro.ConsentimentoEm;
+            VersaoAvisoPrivacidade = outro.VersaoAvisoPrivacidade;
+        }
+
         AtualizadoEm = em;
     }
 

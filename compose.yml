@@ -40,6 +40,12 @@ services:
       # "localhost" aqui apontaria para o proprio container da API.
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Agente__BaseUrl: "http://agente:8000"
+      # Chave das operacoes de privacidade (exclusao LGPD e painel do corretor).
+      # Obrigatoria e sem valor padrao, de proposito: sem ela a API sobe e
+      # responde /health, mas devolve 503 no painel e na exclusao -- falha
+      # silenciosa que ja aconteceu uma vez, porque o .env tinha a chave e o
+      # compose nao a repassava.
+      SEGURANCA__CHAVEPRIVACIDADE: ${SEGURANCA__CHAVEPRIVACIDADE:?defina SEGURANCA__CHAVEPRIVACIDADE no .env do solar-ai-api}
       SOLAR_VERSION: ${SOLAR_VERSION:-dev}
     ports:
       - "8080:8080"

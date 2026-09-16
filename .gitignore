@@ -9,3 +9,7 @@ bin/
 obj/
 .vs/
 *.user
+
+# Ferramentas de agente, nunca versionadas
+.maestri/
+.serena/

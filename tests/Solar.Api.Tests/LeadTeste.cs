@@ -108,6 +108,7 @@ public class ContratoDoTurnoTeste
         typeof(PerfilLead),
         typeof(CamposExtraidos),
         typeof(ImovelSugerido),
+        typeof(SlotOferecido),
         typeof(TurnoRequest),
         typeof(TurnoResponse),
     ];
@@ -129,9 +130,9 @@ public class ContratoDoTurnoTeste
     }
 
     [Fact]
-    public void Espelho_continua_com_6_tipos_e_37_campos()
+    public void Espelho_tem_7_tipos_e_42_campos_depois_da_emenda_da_agenda()
     {
-        Assert.Equal(6, Espelho.Length);
-        Assert.Equal(37, Espelho.Sum(tipo => Campos(tipo).Length));
+        Assert.Equal(7, Espelho.Length);
+        Assert.Equal(42, Espelho.Sum(tipo => Campos(tipo).Length));
     }
 }
