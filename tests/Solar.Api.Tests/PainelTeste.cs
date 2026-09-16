@@ -34,7 +34,7 @@ public class PainelTeste
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Painel:UrlBaseDoFront"] = "http://localhost:4242",
+                ["Painel:UrlBaseDoFront"] = "http://localhost:4200",
                 ["RateLimiting:PainelRecuperacaoPorIpPorMinuto"] = "10",
                 ["RateLimiting:PainelRecuperacaoPorEmailPorMinuto"] = "5",
             })
@@ -146,10 +146,10 @@ public class PainelTeste
         Assert.IsType<AcceptedResult>(resultado);
         Assert.NotNull(remetente.Link);
         var link = remetente.Link!;
-        const string prefixo = "http://localhost:4242/entrar?token=";
+        const string prefixo = "http://localhost:4200/entrar?token=";
         Assert.StartsWith(prefixo, link, StringComparison.Ordinal);
         Assert.DoesNotContain("api.example.test", link, StringComparison.Ordinal);
-        Assert.DoesNotContain("/painel/senha/recuperacoes/", link, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/", link, StringComparison.Ordinal);
 
         var tokenEscapado = link[prefixo.Length..];
         Assert.NotEmpty(tokenEscapado);

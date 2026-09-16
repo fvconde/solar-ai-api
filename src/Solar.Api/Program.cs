@@ -113,8 +113,8 @@ builder.Services.AddRateLimiter(opcoes =>
             ? item as string
             : null;
 
-        var ehIdentificacao = caminho.Equals("/painel/identificacao", StringComparison.OrdinalIgnoreCase);
-        var ehRecuperacao = caminho.Equals("/painel/senha/recuperacoes", StringComparison.OrdinalIgnoreCase);
+        var ehIdentificacao = caminho.Equals("/api/painel/identificacao", StringComparison.OrdinalIgnoreCase);
+        var ehRecuperacao = caminho.Equals("/api/painel/senha/recuperacoes", StringComparison.OrdinalIgnoreCase);
         var limite = ehIdentificacao
             ? builder.Configuration.GetValue("RateLimiting:PainelIdentificacaoPorMinuto", 20)
             : ehRecuperacao
