@@ -1,5 +1,11 @@
 namespace Solar.Api.Dominio;
 
+public static class PerfisDoPainel
+{
+    public const string Corretor = "corretor";
+    public const string Supervisor = "supervisor";
+}
+
 public static class Especialidades
 {
     public const string Moradia = "moradia";
@@ -21,6 +27,10 @@ public sealed class Corretor
     public string Nome { get; private set; } = string.Empty;
 
     public string Especialidade { get; private set; } = Especialidades.Moradia;
+
+    public string Perfil { get; private set; } = PerfisDoPainel.Corretor;
+
+    public bool VinculoAtivo { get; private set; } = true;
 
     /// <summary>Termos de cobertura -- zonas ou bairros -- casados contra a regiao do lead.</summary>
     public List<string> Regioes { get; private set; } = [];

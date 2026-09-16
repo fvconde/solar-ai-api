@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
+using Solar.Api.Contracts;
 using Microsoft.Extensions.Options;
 using Solar.Api.Persistencia;
 
@@ -78,5 +79,11 @@ public sealed class CorretorAuthenticationHandler(
         var principal = new ClaimsPrincipal(identity);
 
         return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
+    }
+
+    protected override async Task HandleChallengeAsync(AuthenticationProperties properties)
+    {
+        Response.StatusCode = StatusCodes.Status401Unauthorized;
+        await Response.WriteAsJsonAsync(new ErroPainelResponse("sessao_invalida"));
     }
 }

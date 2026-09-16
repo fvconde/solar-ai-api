@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Solar.Api.Contracts;
+using Solar.Api.Conversas;
 using Solar.Api.Dominio;
 using Solar.Api.Persistencia;
 using Solar.Api.Seguranca;
@@ -33,6 +35,8 @@ public class PainelController : ControllerBase
     private readonly IPainelRateLimitStore rateLimitStore;
     private readonly TimeProvider timeProvider;
     private readonly IHostEnvironment ambiente;
+    private readonly ConversaRepositorio conversas;
+    private readonly ILogger<PainelController> logger;
 
     public PainelController(
         SolarDbContext db,
@@ -41,7 +45,9 @@ public class PainelController : ControllerBase
         IEnviadorEmail enviadorEmail,
         IPainelRateLimitStore rateLimitStore,
         TimeProvider timeProvider,
-        IHostEnvironment ambiente)
+        IHostEnvironment ambiente,
+        ConversaRepositorio? conversas = null,
+        ILogger<PainelController>? logger = null)
     {
         this.db = db;
         this.configuracao = configuracao;
@@ -50,6 +56,8 @@ public class PainelController : ControllerBase
         this.rateLimitStore = rateLimitStore;
         this.timeProvider = timeProvider;
         this.ambiente = ambiente;
+        this.conversas = conversas ?? new ConversaRepositorio(db);
+        this.logger = logger ?? NullLogger<PainelController>.Instance;
     }
 
     [HttpPost("identificacao")]
@@ -152,7 +160,7 @@ public class PainelController : ControllerBase
             await db.SaveChangesAsync(cancellationToken);
 
             DefinirCookieDeSessao(token);
-            return Ok(new SessaoPainelResponse(ParaContrato(corretor)));
+            return Ok(ParaContrato(corretor));
         }
         finally
         {
@@ -171,7 +179,7 @@ public class PainelController : ControllerBase
 
         if (corretorId is null)
         {
-            return Unauthorized();
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
         }
 
         var corretor = await db.Corretores
@@ -179,8 +187,8 @@ public class PainelController : ControllerBase
             .SingleOrDefaultAsync(c => c.Id == corretorId && c.Ativo, cancellationToken);
 
         return corretor is null
-            ? Unauthorized()
-            : Ok(new SessaoPainelResponse(ParaContrato(corretor)));
+            ? Unauthorized(new ErroPainelResponse("sessao_invalida"))
+            : Ok(ParaContrato(corretor));
     }
 
     [HttpPost("senha/recuperacoes")]
@@ -335,7 +343,7 @@ public class PainelController : ControllerBase
             }
 
             DefinirCookieDeSessao(tokenSessao);
-            return Ok(new SessaoPainelResponse(ParaContrato(corretor)));
+            return Ok(ParaContrato(corretor));
         }
         finally
         {
@@ -347,25 +355,38 @@ public class PainelController : ControllerBase
     [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
     [ProducesResponseType<FilaLeadsResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<PerfilInsuficientePainelResponse>(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<FilaLeadsResponse>> ListarLeadsAsync(
+        [FromQuery] string? filtro,
         [FromQuery] string? intencao,
-        [FromQuery] bool? meusLeads,
         CancellationToken cancellationToken)
     {
-        var corretorId = ObterCorretorIdDaSessao();
-
-        if (corretorId is null)
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
         {
-            return Unauthorized();
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
         }
 
-        var corretorAtivo = await db.Corretores
-            .AsNoTracking()
-            .AnyAsync(c => c.Id == corretorId && c.Ativo, cancellationToken);
+        var filtroEfetivo = string.IsNullOrWhiteSpace(filtro)
+            ? sessao.FiltroInicial
+            : filtro.Trim();
 
-        if (!corretorAtivo)
+        if (!sessao.FiltrosPermitidos.Contains(filtroEfetivo, StringComparer.Ordinal))
         {
-            return Unauthorized();
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse(
+                    "perfil_insuficiente",
+                    PerfisDoPainel.Supervisor));
+        }
+
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Supervisor &&
+            filtroEfetivo is "sem_corretor" or "visao_geral")
+        {
+            logger.LogInformation(
+                "Acesso administrativo do painel por corretor {CorretorId} no filtro {Filtro}",
+                sessao.Corretor.Id,
+                filtroEfetivo);
         }
 
         var leadsQuery = db.Leads.AsNoTracking();
@@ -396,32 +417,151 @@ public class PainelController : ControllerBase
                     .ThenByDescending(e => e.Id)
                     .First());
 
-        var resultado = new List<LeadPainelItem>();
-
-        foreach (var lead in leadsList)
-        {
-            encaminhamentoPorLead.TryGetValue(lead.Id, out var encaminhamento);
-            var leadCorretorId = encaminhamento?.CorretorId;
-            var leadCorretorNome = encaminhamento?.Corretor?.Nome;
-
-            if (meusLeads == true && leadCorretorId != corretorId)
+        var autorizados = leadsList
+            .Where(lead =>
             {
-                continue;
-            }
+                encaminhamentoPorLead.TryGetValue(lead.Id, out var encaminhamento);
+                return PertenceAoFiltro(
+                    lead,
+                    encaminhamento,
+                    filtroEfetivo,
+                    sessao.CorretorId);
+            })
+            .OrderByDescending(lead => lead.Score ?? 0)
+            .ThenByDescending(lead => lead.AtualizadoEm)
+            .ToList();
 
-            resultado.Add(new LeadPainelItem(
-                lead.Id,
-                lead.Nome,
-                lead.Intencao,
-                lead.Score,
-                lead.AtualizadoEm,
-                lead.Status,
-                leadCorretorId,
-                leadCorretorNome,
-                lead.Regiao));
+        var itens = autorizados
+            .Select(lead =>
+            {
+                encaminhamentoPorLead.TryGetValue(lead.Id, out var encaminhamento);
+                return new LeadPainelItem(
+                    lead.Id,
+                    lead.Nome,
+                    ReferenciaDo(lead.Id),
+                    PedidoResumoDe(lead),
+                    lead.CriadoEm,
+                    lead.Score,
+                    lead.Status,
+                    encaminhamento?.Status,
+                    sessao.Corretor.Perfil == PerfisDoPainel.Supervisor
+                        ? ParaResumo(encaminhamento?.Corretor)
+                        : null);
+            })
+            .ToList();
+
+        return Ok(new FilaLeadsResponse(itens, itens.Count));
+    }
+
+    [HttpGet("leads/{id:guid}")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType<DetalheLeadPainelResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DetalheLeadPainelResponse>> ObterDetalheLeadAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
+        {
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
         }
 
-        return Ok(new FilaLeadsResponse(resultado, resultado.Count));
+        var lead = await db.Leads
+            .AsNoTracking()
+            .SingleOrDefaultAsync(l => l.Id == id, cancellationToken);
+
+        if (lead is null)
+        {
+            return NotFound(new ErroPainelResponse("lead_nao_encontrado"));
+        }
+
+        var encaminhamento = await db.Encaminhamentos
+            .AsNoTracking()
+            .Include(e => e.Corretor)
+            .Where(e => e.LeadId == id)
+            .OrderByDescending(e => e.Em)
+            .ThenByDescending(e => e.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var pertenceAoEscopo = sessao.Corretor.Perfil == PerfisDoPainel.Supervisor ||
+            encaminhamento?.CorretorId == sessao.CorretorId;
+
+        if (!pertenceAoEscopo)
+        {
+            return NotFound(new ErroPainelResponse("lead_nao_encontrado"));
+        }
+
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Supervisor &&
+            encaminhamento?.CorretorId != sessao.CorretorId)
+        {
+            logger.LogInformation(
+                "Consulta administrativa do lead {LeadId} por corretor {CorretorId}",
+                id,
+                sessao.Corretor.Id);
+        }
+
+        var conversa = await db.Conversas
+            .AsNoTracking()
+            .Where(c => c.LeadId == id)
+            .OrderByDescending(c => c.AtualizadaEm)
+            .ThenByDescending(c => c.CriadaEm)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var transcricao = conversa is null
+            ? []
+            : await db.Mensagens
+                .AsNoTracking()
+                .Where(m => m.ConversaId == conversa.Id)
+                .OrderBy(m => m.Em)
+                .ThenBy(m => m.Id)
+                .Select(m => new TranscricaoPainelResponse(
+                    m.Papel == Papeis.Agente ? "lia" : "lead",
+                    m.Texto,
+                    m.Em))
+                .ToListAsync(cancellationToken);
+
+        var imoveisSugeridos = conversa is null
+            ? []
+            : await conversas.ObterImoveisSugeridosAsync(conversa.Id, cancellationToken);
+
+        var slot = await db.Slots
+            .AsNoTracking()
+            .Where(s => s.LeadId == id)
+            .OrderBy(s => s.Inicio)
+            .Select(s => new { s.Inicio })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var fatores = FatoresDe(lead);
+        int? valorQualificacao = fatores.Any(fator => fator.Preenchido)
+            ? fatores.Where(fator => fator.Preenchido).Sum(fator => fator.Pontos)
+            : null;
+
+        var detalhe = new DetalheLeadPainelResponse(
+            lead.Id,
+            lead.Nome,
+            ReferenciaDo(lead.Id),
+            PedidoResumoDe(lead),
+            lead.CriadoEm,
+            lead.Status,
+            new ContatoPainelResponse(lead.Telefone, lead.Email),
+            new QualificacaoPainelResponse(valorQualificacao, fatores),
+            encaminhamento?.Resumo,
+            encaminhamento is null
+                ? null
+                : new EncaminhamentoPainelResponse(
+                    encaminhamento.Id,
+                    encaminhamento.Status,
+                    ParaResumo(encaminhamento.Corretor),
+                    encaminhamento.Em),
+            slot is null
+                ? null
+                : new AgendamentoPainelResponse(slot.Inicio, EstadosDoAgendamento.Confirmado),
+            imoveisSugeridos,
+            transcricao);
+
+        return Ok(detalhe);
     }
 
     private DateTimeOffset Agora => timeProvider.GetUtcNow();
@@ -505,7 +645,145 @@ public class PainelController : ControllerBase
     private static int SegundosRestantes(DateTimeOffset bloqueadoAte, DateTimeOffset agora) =>
         Math.Clamp((int)Math.Ceiling((bloqueadoAte - agora).TotalSeconds), 1, (int)DuracaoBloqueio.TotalSeconds);
 
-    private static CorretorPainelResponse ParaContrato(Corretor corretor) =>
-        new(corretor.Id, corretor.Nome, corretor.Especialidade);
+    private async Task<SessaoPainelContext?> ObterSessaoPainelAsync(
+        CancellationToken cancellationToken)
+    {
+        var corretorId = ObterCorretorIdDaSessao();
+        if (corretorId is null)
+        {
+            return null;
+        }
+
+        var corretor = await db.Corretores
+            .AsNoTracking()
+            .SingleOrDefaultAsync(c => c.Id == corretorId && c.Ativo, cancellationToken);
+
+        if (corretor is null)
+        {
+            return null;
+        }
+
+        var (filtrosPermitidos, filtroInicial) = FiltrosPara(corretor);
+        Guid? idDeEscopo = corretor.Perfil == PerfisDoPainel.Supervisor && !corretor.VinculoAtivo
+            ? null
+            : corretor.Id;
+
+        return new SessaoPainelContext(corretor, idDeEscopo, filtrosPermitidos, filtroInicial);
+    }
+
+    private static (IReadOnlyList<string> FiltrosPermitidos, string FiltroInicial) FiltrosPara(
+        Corretor corretor)
+    {
+        if (corretor.Perfil != PerfisDoPainel.Supervisor)
+        {
+            return (new[] { "meus_leads" }, "meus_leads");
+        }
+
+        return corretor.VinculoAtivo
+            ? (new[] { "minha_fila", "sem_corretor", "visao_geral" }, "minha_fila")
+            : (new[] { "sem_corretor", "visao_geral" }, "sem_corretor");
+    }
+
+    private static bool PertenceAoFiltro(
+        Lead lead,
+        Encaminhamento? encaminhamento,
+        string filtro,
+        Guid? corretorId)
+    {
+        return filtro switch
+        {
+            "meus_leads" or "minha_fila" =>
+                corretorId is not null && encaminhamento?.CorretorId == corretorId,
+            "sem_corretor" =>
+                (lead.Status == StatusDoLead.Novo && encaminhamento is null) ||
+                encaminhamento?.CorretorId is null,
+            "visao_geral" => true,
+            _ => false,
+        };
+    }
+
+    private static string ReferenciaDo(Guid id) =>
+        id.ToString("N")[..8].ToUpperInvariant();
+
+    private static string PedidoResumoDe(Lead lead)
+    {
+        var partes = new List<string>(capacity: 3);
+
+        if (!string.IsNullOrWhiteSpace(lead.Intencao))
+        {
+            partes.Add(lead.Intencao);
+        }
+
+        if (lead.Quartos is { } quartos)
+        {
+            partes.Add($"{quartos} quartos");
+        }
+
+        if (!string.IsNullOrWhiteSpace(lead.Regiao))
+        {
+            partes.Add(lead.Regiao);
+        }
+
+        return partes.Count == 0
+            ? "Preferências ainda não informadas"
+            : string.Join(", ", partes);
+    }
+
+    private static CorretorPainelResumo? ParaResumo(Corretor? corretor) =>
+        corretor is null
+            ? null
+            : new CorretorPainelResumo(corretor.Id, corretor.Nome, IniciaisDe(corretor.Nome));
+
+    private static string IniciaisDe(string nome)
+    {
+        var partes = nome.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (partes.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        if (partes.Length == 1)
+        {
+            return partes[0].Length == 1
+                ? partes[0].ToUpperInvariant()
+                : partes[0][..2].ToUpperInvariant();
+        }
+
+        return string.Concat(
+            char.ToUpperInvariant(partes[0][0]),
+            char.ToUpperInvariant(partes[^1][0]));
+    }
+
+    private static IReadOnlyList<FatorQualificacaoPainelResponse> FatoresDe(Lead lead) =>
+    [
+        new("finalidade", "Finalidade da busca", 15, !string.IsNullOrWhiteSpace(lead.Intencao)),
+        new("bairro", "Bairro dentro da busca", 20, !string.IsNullOrWhiteSpace(lead.Regiao)),
+        new("quartos", "Número de quartos", 15, lead.Quartos is not null),
+        new("faixa", "Faixa de aluguel informada", 20, lead.PrecoMin is not null || lead.PrecoMax is not null),
+        new("prazo", "Prazo de mudança", 10, !string.IsNullOrWhiteSpace(lead.Urgencia)),
+        new("contato", "Contato confirmado para o corretor", 20, lead.TemContato),
+    ];
+
+    private static SessaoPainelResponse ParaContrato(Corretor corretor)
+    {
+        var (filtrosPermitidos, filtroInicial) = FiltrosPara(corretor);
+        Guid? id = corretor.Perfil == PerfisDoPainel.Supervisor && !corretor.VinculoAtivo
+            ? null
+            : corretor.Id;
+
+        return new SessaoPainelResponse(
+            new CorretorPainelResponse(corretor.Id, corretor.Nome, corretor.Especialidade),
+            corretor.Perfil,
+            id,
+            corretor.VinculoAtivo,
+            filtrosPermitidos,
+            filtroInicial);
+    }
+
+    private sealed record SessaoPainelContext(
+        Corretor Corretor,
+        Guid? CorretorId,
+        IReadOnlyList<string> FiltrosPermitidos,
+        string FiltroInicial);
 
 }
