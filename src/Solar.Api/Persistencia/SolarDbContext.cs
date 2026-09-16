@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Solar.Api.Contracts;
 using Solar.Api.Dominio;
@@ -14,7 +15,13 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
 
     public DbSet<Corretor> Corretores => Set<Corretor>();
 
+    public DbSet<SessaoCorretor> Sessoes => Set<SessaoCorretor>();
+
+    public DbSet<RecuperacaoSenha> RecuperacoesSenha => Set<RecuperacaoSenha>();
+
     public DbSet<Encaminhamento> Encaminhamentos => Set<Encaminhamento>();
+
+    public DbSet<Slot> Slots => Set<Slot>();
 
     protected override void OnModelCreating(ModelBuilder modelo)
     {
@@ -30,6 +37,7 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             lead.Property(l => l.Telefone).HasMaxLength(Contato.LimiteTelefone);
             lead.Property(l => l.Email).HasMaxLength(Contato.LimiteEmail);
             lead.Property(l => l.Status).HasMaxLength(20).IsRequired().HasDefaultValue(StatusDoLead.Novo);
+            lead.Property(l => l.VersaoAvisoPrivacidade).HasMaxLength(AvisoPrivacidade.LimiteVersao);
 
             // Parcial porque quase todo lead nasce sem contato: sem o filtro, o
             // segundo lead com telefone nulo violaria a unicidade.
@@ -43,10 +51,56 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             corretor.Property(c => c.Id).ValueGeneratedNever();
             corretor.Property(c => c.Nome).HasMaxLength(200).IsRequired();
             corretor.Property(c => c.Especialidade).HasMaxLength(20).IsRequired();
+            corretor.Property(c => c.Perfil)
+                .HasMaxLength(20)
+                .IsRequired()
+                .HasDefaultValue(PerfisDoPainel.Corretor);
+            corretor.Property(c => c.VinculoAtivo)
+                .IsRequired()
+                .HasDefaultValue(true);
             corretor.Property(c => c.ContatoInterno).HasMaxLength(200).IsRequired();
+            corretor.Property(c => c.Email).HasMaxLength(320).IsRequired();
+            corretor.Property(c => c.EmailNormalizado).HasMaxLength(320).IsRequired();
+            corretor.Property(c => c.SenhaHash).HasMaxLength(500);
+            corretor.Property(c => c.TentativasSenha).HasDefaultValue(0).IsRequired();
             corretor.Property(c => c.Regioes).IsRequired();
 
             corretor.HasIndex(c => new { c.Especialidade, c.Ativo });
+            corretor.HasIndex(c => c.EmailNormalizado).IsUnique();
+        });
+
+        modelo.Entity<SessaoCorretor>(sessao =>
+        {
+            sessao.HasKey(s => s.Id);
+            sessao.Property(s => s.TokenHash)
+                .HasColumnType("bytea")
+                .HasMaxLength(32)
+                .IsRequired();
+
+            sessao.HasOne(s => s.Corretor)
+                .WithMany()
+                .HasForeignKey(s => s.CorretorId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            sessao.HasIndex(s => s.TokenHash).IsUnique();
+            sessao.HasIndex(s => s.CorretorId);
+        });
+
+        modelo.Entity<RecuperacaoSenha>(recuperacao =>
+        {
+            recuperacao.HasKey(r => r.Id);
+            recuperacao.Property(r => r.TokenHash)
+                .HasColumnType("bytea")
+                .HasMaxLength(32)
+                .IsRequired();
+
+            recuperacao.HasOne(r => r.Corretor)
+                .WithMany()
+                .HasForeignKey(r => r.CorretorId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            recuperacao.HasIndex(r => r.TokenHash).IsUnique();
+            recuperacao.HasIndex(r => r.CorretorId);
         });
 
         modelo.Entity<Encaminhamento>(encaminhamento =>
@@ -54,6 +108,11 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             encaminhamento.HasKey(e => e.Id);
             encaminhamento.Property(e => e.Especialidade).HasMaxLength(20).IsRequired();
             encaminhamento.Property(e => e.Status).HasMaxLength(20).IsRequired();
+            encaminhamento.Property(e => e.Resumo)
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<ResumoResponse>(v, (JsonSerializerOptions?)null));
 
             encaminhamento.HasOne<Conversa>()
                 .WithMany()
@@ -78,6 +137,25 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             encaminhamento.HasIndex(e => e.CorretorId);
         });
 
+        modelo.Entity<Slot>(slot =>
+        {
+            slot.HasKey(s => s.Id);
+
+            slot.HasOne(s => s.Corretor)
+                .WithMany()
+                .HasForeignKey(s => s.CorretorId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Excluir um lead libera o horario; a agenda do corretor permanece.
+            slot.HasOne(s => s.Lead)
+                .WithMany()
+                .HasForeignKey(s => s.LeadId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            slot.HasIndex(s => new { s.CorretorId, s.Inicio }).IsUnique();
+            slot.HasIndex(s => s.LeadId);
+        });
+
         modelo.Entity<Conversa>(conversa =>
         {
             conversa.HasKey(c => c.Id);
@@ -87,6 +165,8 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             // valor recebido.
             conversa.Property(c => c.Id).ValueGeneratedNever();
             conversa.Property(c => c.Canal).HasMaxLength(20).IsRequired();
+            conversa.Property(c => c.TentativasReengajamento).IsRequired().HasDefaultValue(0);
+            conversa.Property(c => c.Desfecho).HasMaxLength(30);
 
             conversa.HasOne(c => c.Lead)
                 .WithMany()
@@ -102,11 +182,22 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             mensagem.Property(m => m.Papel).HasMaxLength(10).IsRequired();
             mensagem.Property(m => m.Texto).HasMaxLength(ContratoTurno.LimiteMensagem).IsRequired();
             mensagem.Property(m => m.ProximaAcao).HasMaxLength(30);
+            mensagem.Property(m => m.StatusAgendamento).HasMaxLength(20);
+            mensagem.Property(m => m.ImoveisSugeridos)
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<List<ImovelSugerido>>(v, (JsonSerializerOptions?)null));
 
             mensagem.HasOne<Conversa>()
                 .WithMany(c => c.Mensagens)
                 .HasForeignKey(m => m.ConversaId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            mensagem.HasOne(m => m.Slot)
+                .WithMany()
+                .HasForeignKey(m => m.SlotId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // As duas consultas quentes -- ultimas N do POST e historico inteiro
             // do GET -- filtram por conversa e ordenam por id. O indice composto

@@ -82,6 +82,24 @@ public sealed class EncaminhamentoRepositorio(SolarDbContext db)
     public async Task<string?> CorretorDaConversaAsync(Guid conversaId, CancellationToken cancellationToken) =>
         (await AtribuidoAsync(conversaId, cancellationToken))?.Corretor;
 
+    public Task<Encaminhamento?> ObterAsync(long id, CancellationToken cancellationToken) =>
+        db.Encaminhamentos
+            .AsNoTracking()
+            .FirstOrDefaultAsync(encaminhamento => encaminhamento.Id == id, cancellationToken);
+
+    public Task<Encaminhamento?> ObterParaEscritaAsync(long id, CancellationToken cancellationToken) =>
+        db.Encaminhamentos
+            .FirstOrDefaultAsync(encaminhamento => encaminhamento.Id == id, cancellationToken);
+
+    public async Task GravarResumoAsync(
+        Encaminhamento encaminhamento,
+        ResumoResponse resumo,
+        CancellationToken cancellationToken)
+    {
+        encaminhamento.RegistrarResumo(resumo);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task<AtribuicaoJaGravada?> AtribuidoAsync(Guid conversaId, CancellationToken cancellationToken) =>
         await db.Encaminhamentos
             .AsNoTracking()
