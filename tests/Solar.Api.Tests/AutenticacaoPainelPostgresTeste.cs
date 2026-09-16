@@ -75,7 +75,7 @@ public sealed class AutenticacaoPainelPostgresTeste
         Assert.IsType<AcceptedResult>(pedido);
         Assert.Equal(email, remetente.Destinatario);
         Assert.StartsWith(
-            "http://localhost:4242/entrar?token=",
+            "http://localhost:4200/entrar?token=",
             remetente.Link,
             StringComparison.Ordinal);
         var token = ExtrairTokenDoLink(remetente.Link!);
@@ -127,7 +127,7 @@ public sealed class AutenticacaoPainelPostgresTeste
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Painel:UrlBaseDoFront"] = "http://localhost:4242",
+            ["Painel:UrlBaseDoFront"] = "http://localhost:4200",
                     ["RateLimiting:PainelRecuperacaoPorIpPorMinuto"] = "10",
                     ["RateLimiting:PainelRecuperacaoPorEmailPorMinuto"] = "5",
                 })
