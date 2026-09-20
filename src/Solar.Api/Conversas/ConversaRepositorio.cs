@@ -73,7 +73,7 @@ public sealed class ConversaRepositorio(SolarDbContext db)
             .Where(m => m.ConversaId == conversaId)
             .OrderByDescending(m => m.Id)
             .Take(janela)
-            .Select(m => new MensagemHistorico(m.Papel, m.Texto, m.Em))
+            .Select(m => new MensagemHistorico(m.Papel, m.Texto, m.Em, m.ImoveisSugeridos))
             .ToListAsync(cancellationToken);
 
         recentes.Reverse();
@@ -355,7 +355,9 @@ public sealed class ConversaRepositorio(SolarDbContext db)
                         && (c.Desfecho == null || (c.Desfecho != "encerrar" && c.Desfecho != "agendar_reuniao" && c.Desfecho != "direcionar_especialista"))
                         && c.Lead.ConsentimentoEm != null
                         && !db.Encaminhamentos.Any(e => e.ConversaId == c.Id)
-                        && db.Mensagens.Any(m => m.ConversaId == c.Id))
+                    // Nunca reengajar uma conversa que ainda nao recebeu a primeira
+                    // resposta da Lia: uma fala isolada do lead nao e inatividade.
+                    && db.Mensagens.Any(m => m.ConversaId == c.Id && m.Papel == Papeis.Agente))
             .OrderBy(c => c.AtualizadaEm)
             .Select(c => c.Id)
             .ToListAsync(cancellationToken);

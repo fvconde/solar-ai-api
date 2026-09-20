@@ -120,19 +120,25 @@ public class ContratoDoTurnoTeste
     public void Nenhum_tipo_do_espelho_carrega_contato()
     {
         var proibidos = new[] { "telefone", "celular", "email", "whatsapp", "contato" };
+        // contatoinformado eh flag de estado (bool), nunca o telefone ou e-mail em si;
+        // nao viola a restricao que este teste protege.
+        var excecoes = new[] { "contatoinformado" };
 
         foreach (var tipo in Espelho)
         {
-            var campos = Campos(tipo).Select(campo => campo.Name.ToLowerInvariant()).ToArray();
+            var campos = Campos(tipo)
+                .Select(campo => campo.Name.ToLowerInvariant())
+                .Where(campo => !excecoes.Contains(campo))
+                .ToArray();
 
             Assert.DoesNotContain(campos, campo => proibidos.Any(campo.Contains));
         }
     }
 
     [Fact]
-    public void Espelho_tem_7_tipos_e_42_campos_depois_da_emenda_da_agenda()
+    public void Espelho_tem_7_tipos_e_45_campos_depois_da_flag_de_encaminhamento()
     {
         Assert.Equal(7, Espelho.Length);
-        Assert.Equal(42, Espelho.Sum(tipo => Campos(tipo).Length));
+        Assert.Equal(45, Espelho.Sum(tipo => Campos(tipo).Length));
     }
 }

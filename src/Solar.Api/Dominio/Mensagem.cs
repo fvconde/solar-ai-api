@@ -84,5 +84,5 @@ public sealed class Mensagem
         SlotId = slotId;
     }
 
-    public MensagemHistorico ParaContrato() => new(Papel, Texto, Em);
+    public MensagemHistorico ParaContrato() => new(Papel, Texto, Em, ImoveisSugeridos);
 }

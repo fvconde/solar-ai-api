@@ -93,7 +93,9 @@ public sealed class ServicoDeReengajamento(
                     "[reengajar]",
                     historico,
                     conversa.Lead.ParaContrato(),
-                    []);
+                    [],
+                    conversa.Lead.TemContato,
+                    conversa.Mensagens.Any(m => m.StatusAgendamento == EstadosDoAgendamento.Confirmado));
 
                 TurnoResponse resposta;
                 try

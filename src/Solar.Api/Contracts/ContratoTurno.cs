@@ -53,7 +53,8 @@ public static class ContratoTurno
 public sealed record MensagemHistorico(
     string Papel,
     string Texto,
-    DateTimeOffset Em);
+    DateTimeOffset Em,
+    IReadOnlyList<ImovelSugerido>? ImoveisSugeridos = null);
 
 /// <summary>Perfil acumulado do lead, do qual a API e dona.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -108,7 +109,9 @@ public sealed record TurnoRequest(
     [MaxLength(ContratoTurno.LimiteHistorico)]
     IReadOnlyList<MensagemHistorico> Historico,
     PerfilLead PerfilLead,
-    IReadOnlyList<SlotOferecido> Agenda);
+    IReadOnlyList<SlotOferecido> Agenda,
+    bool ContatoInformado = false,
+    bool VisitaConfirmada = false);
 
 /// <summary>Um turno de conversa saindo do agente.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
