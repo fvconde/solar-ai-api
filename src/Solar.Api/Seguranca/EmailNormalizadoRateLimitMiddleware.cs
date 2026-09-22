@@ -15,8 +15,8 @@ public sealed class EmailNormalizadoRateLimitMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context)
     {
         if (context.Request.Method.Equals(HttpMethods.Post, StringComparison.OrdinalIgnoreCase) &&
-            (context.Request.Path.Equals("/painel/identificacao") ||
-             context.Request.Path.Equals("/painel/senha/recuperacoes")) &&
+            (context.Request.Path.Equals("/api/painel/identificacao") ||
+             context.Request.Path.Equals("/api/painel/senha/recuperacoes")) &&
             (context.Request.ContentLength is > 0 && context.Request.ContentLength <= LimiteCorpo))
         {
             context.Request.EnableBuffering();

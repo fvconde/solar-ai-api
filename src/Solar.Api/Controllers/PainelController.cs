@@ -16,7 +16,7 @@ using Solar.Api.Servicos;
 namespace Solar.Api.Controllers;
 
 [ApiController]
-[Route("painel")]
+[Route("api/painel")]
 [EnableRateLimiting("painel")]
 [Produces("application/json")]
 public class PainelController : ControllerBase

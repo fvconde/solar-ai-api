@@ -27,7 +27,7 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         using var client = factory.CreateClient();
         AdicionarSessao(client, cenario.CorretorToken);
 
-        using var resposta = await client.GetAsync("/painel/leads?filtro=visao_geral");
+        using var resposta = await client.GetAsync("/api/painel/leads?filtro=visao_geral");
         var json = await resposta.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
@@ -45,7 +45,7 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         using var client = factory.CreateClient();
         AdicionarSessao(client, cenario.CorretorToken);
 
-        using var lista = await client.GetAsync("/painel/leads");
+        using var lista = await client.GetAsync("/api/painel/leads");
         var listaJson = await lista.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, lista.StatusCode);
@@ -59,7 +59,7 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         Assert.DoesNotContain("\"email\"", listaJson, StringComparison.Ordinal);
         Assert.DoesNotContain("\"transcricao\"", listaJson, StringComparison.Ordinal);
 
-        using var detalhe = await client.GetAsync($"/painel/leads/{cenario.ProprioLeadId:D}");
+        using var detalhe = await client.GetAsync($"/api/painel/leads/{cenario.ProprioLeadId:D}");
         var detalheJson = await detalhe.Content.ReadAsStringAsync();
         var detalheContrato = await detalhe.Content.ReadFromJsonAsync<DetalheLeadPainelResponse>();
 
@@ -70,7 +70,7 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         Assert.Contains("\"nomeExibicao\"", detalheJson, StringComparison.Ordinal);
         Assert.Contains("\"pedidoResumo\"", detalheJson, StringComparison.Ordinal);
         Assert.Contains("\"leadStatus\"", detalheJson, StringComparison.Ordinal);
-        Assert.Contains("\"vinculoAtivo\"", (await client.GetStringAsync("/painel/sessao")), StringComparison.Ordinal);
+        Assert.Contains("\"vinculoAtivo\"", (await client.GetStringAsync("/api/painel/sessao")), StringComparison.Ordinal);
         Assert.Contains($"\"telefone\":\"{cenario.ProprioTelefone}\"", detalheJson, StringComparison.Ordinal);
         Assert.Contains($"\"email\":\"{cenario.ProprioEmail}\"", detalheJson, StringComparison.Ordinal);
         Assert.Contains("\"resumo\":null", detalheJson, StringComparison.Ordinal);
@@ -86,7 +86,7 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         using var supervisorClient = factory.CreateClient();
         AdicionarSessao(supervisorClient, cenario.SupervisorToken);
         using var detalheComResumo = await supervisorClient.GetAsync(
-            $"/painel/leads/{cenario.LeadComResumoId:D}");
+            $"/api/painel/leads/{cenario.LeadComResumoId:D}");
         var resumoJson = await detalheComResumo.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, detalheComResumo.StatusCode);
@@ -103,8 +103,8 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         using var client = factory.CreateClient();
         AdicionarSessao(client, cenario.CorretorToken);
 
-        using var foraDoEscopo = await client.GetAsync($"/painel/leads/{cenario.ForaDaCarteiraLeadId:D}");
-        using var inexistente = await client.GetAsync($"/painel/leads/{cenario.InexistenteId:D}");
+        using var foraDoEscopo = await client.GetAsync($"/api/painel/leads/{cenario.ForaDaCarteiraLeadId:D}");
+        using var inexistente = await client.GetAsync($"/api/painel/leads/{cenario.InexistenteId:D}");
         var foraJson = await foraDoEscopo.Content.ReadAsStringAsync();
         var inexistenteJson = await inexistente.Content.ReadAsStringAsync();
 
@@ -121,7 +121,7 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         using var client = factory.CreateClient();
         AdicionarSessao(client, cenario.SupervisorSemVinculoToken);
 
-        using var resposta = await client.GetAsync($"/painel/leads/{cenario.LeadSemDadosId:D}");
+        using var resposta = await client.GetAsync($"/api/painel/leads/{cenario.LeadSemDadosId:D}");
         var detalhe = await resposta.Content.ReadFromJsonAsync<DetalheLeadPainelResponse>();
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
@@ -141,7 +141,7 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         using var client = factory.CreateClient();
         AdicionarSessao(client, cenario.SupervisorSemVinculoToken);
 
-        using var resposta = await client.GetAsync("/painel/sessao");
+        using var resposta = await client.GetAsync("/api/painel/sessao");
         var sessao = await resposta.Content.ReadFromJsonAsync<SessaoPainelResponse>();
         var json = await resposta.Content.ReadAsStringAsync();
 
@@ -163,7 +163,7 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
     {
         using var client = factory.CreateClient();
 
-        using var resposta = await client.GetAsync("/painel/leads");
+        using var resposta = await client.GetAsync("/api/painel/leads");
         var json = await resposta.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);

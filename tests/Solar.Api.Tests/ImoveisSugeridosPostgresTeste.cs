@@ -192,6 +192,10 @@ public class ImoveisSugeridosPostgresTeste
         Assert.Equal("Perto de transporte", historico[1].ImoveisSugeridos![0].Motivo);
         Assert.Equal("sp-02", historico[1].ImoveisSugeridos![1].Id);
         Assert.Equal("Espaço amplo com quintal", historico[1].ImoveisSugeridos![1].Motivo);
+
+        var historicoDoAgente = await repo.HistoricoRecenteAsync(conversaId, 20, default);
+        Assert.Equal(2, historicoDoAgente.Last().ImoveisSugeridos!.Count);
+        Assert.Equal("sp-01", historicoDoAgente.Last().ImoveisSugeridos![0].Id);
     }
 
     [Fact]

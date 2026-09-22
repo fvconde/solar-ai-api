@@ -21,7 +21,7 @@ public sealed class PainelDiHttpTeste : IClassFixture<PainelApiFactory>
     public async Task Identificacao_http_resolve_controller_pelo_grafo_real_de_DI()
     {
         using var resposta = await client.PostAsJsonAsync(
-            "/painel/identificacao",
+            "/api/painel/identificacao",
             new { email = $"di-{Guid.NewGuid():N}@tests.solar.local" });
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
@@ -29,6 +29,16 @@ public sealed class PainelDiHttpTeste : IClassFixture<PainelApiFactory>
         var contrato = await resposta.Content.ReadFromJsonAsync<IdentificacaoPainelResponse>();
         Assert.NotNull(contrato);
         Assert.False(contrato.Cadastrado);
+    }
+
+    [Fact]
+    public async Task Rota_antiga_do_painel_nao_responde_apos_prefixo_api()
+    {
+        using var resposta = await client.PostAsJsonAsync(
+            "/painel/identificacao",
+            new { email = $"rota-antiga-{Guid.NewGuid():N}@tests.solar.local" });
+
+        Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }
 }
 

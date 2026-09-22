@@ -96,7 +96,9 @@ public class ConversasController(
             requisicao.Texto,
             historico,
             conversa.Lead.ParaContrato(),
-            horariosOferecidos);
+            horariosOferecidos,
+            conversa.Lead.TemContato,
+            conversa.Mensagens.Any(m => m.StatusAgendamento == EstadosDoAgendamento.Confirmado));
 
         var inicio = Stopwatch.GetTimestamp();
         TurnoResponse resposta;
