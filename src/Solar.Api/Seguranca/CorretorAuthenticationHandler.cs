@@ -15,6 +15,7 @@ public static class CorretorAuthenticationDefaults
     public const string CorretorIdClaim = "solar_corretor_id";
     public const string EspecialidadeClaim = "solar_corretor_especialidade";
     public const string SessaoIdClaim = "solar_sessao_id";
+    public const string PerfilClaim = "solar_perfil";
 }
 
 /// <summary>
@@ -89,6 +90,7 @@ public sealed class CorretorAuthenticationHandler(
             new Claim(ClaimTypes.NameIdentifier, id),
             new Claim(CorretorAuthenticationDefaults.CorretorIdClaim, id),
             new Claim(CorretorAuthenticationDefaults.SessaoIdClaim, sessao.Id.ToString("D")),
+            new Claim(CorretorAuthenticationDefaults.PerfilClaim, corretor.Perfil),
             new Claim(ClaimTypes.Name, corretor.Nome),
             new Claim(CorretorAuthenticationDefaults.EspecialidadeClaim, corretor.Especialidade),
         };

@@ -41,8 +41,8 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
 
             // Parcial porque quase todo lead nasce sem contato: sem o filtro, o
             // segundo lead com telefone nulo violaria a unicidade.
-            lead.HasIndex(l => l.Telefone).IsUnique().HasFilter("telefone IS NOT NULL");
-            lead.HasIndex(l => l.Email).IsUnique().HasFilter("email IS NOT NULL");
+            lead.HasIndex(l => l.Telefone).HasFilter("telefone IS NOT NULL");
+            lead.HasIndex(l => l.Email).HasFilter("email IS NOT NULL");
         });
 
         modelo.Entity<Corretor>(corretor =>
