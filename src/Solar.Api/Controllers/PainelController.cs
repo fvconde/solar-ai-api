@@ -60,6 +60,7 @@ public class PainelController : ControllerBase
         this.logger = logger ?? NullLogger<PainelController>.Instance;
     }
 
+    [NonAction]
     [HttpPost("identificacao")]
     [AllowAnonymous]
     [ProducesResponseType<IdentificacaoPainelResponse>(StatusCodes.Status200OK)]
@@ -80,6 +81,7 @@ public class PainelController : ControllerBase
         return Ok(new IdentificacaoPainelResponse(cadastrado));
     }
 
+    [NonAction]
     [HttpPost("sessoes")]
     [AllowAnonymous]
     [ProducesResponseType<SessaoPainelResponse>(StatusCodes.Status200OK)]
@@ -168,6 +170,7 @@ public class PainelController : ControllerBase
         }
     }
 
+    [NonAction]
     [HttpGet("sessao")]
     [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
     [ProducesResponseType<SessaoPainelResponse>(StatusCodes.Status200OK)]
@@ -618,7 +621,7 @@ public class PainelController : ControllerBase
                 SameSite = SameSiteMode.Strict,
                 Path = "/",
                 Secure = !ambiente.IsDevelopment(),
-                MaxAge = TimeSpan.FromDays(3650),
+            MaxAge = TimeSpan.FromDays(30),
             });
     }
 

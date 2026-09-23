@@ -14,6 +14,7 @@ public static class CorretorAuthenticationDefaults
     public const string CookieName = "solar_corretor_session";
     public const string CorretorIdClaim = "solar_corretor_id";
     public const string EspecialidadeClaim = "solar_corretor_especialidade";
+    public const string SessaoIdClaim = "solar_sessao_id";
 }
 
 /// <summary>
@@ -24,7 +25,8 @@ public sealed class CorretorAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    SolarDbContext db) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    SolarDbContext db,
+    TimeProvider timeProvider) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -43,7 +45,6 @@ public sealed class CorretorAuthenticationHandler(
         }
 
         var sessao = await db.Sessoes
-            .AsNoTracking()
             .Include(s => s.Corretor)
             .SingleOrDefaultAsync(
                 s => s.TokenHash == tokenHash && s.RevogadaEm == null,
@@ -55,23 +56,39 @@ public sealed class CorretorAuthenticationHandler(
         if (sessao is null && db.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) == true)
         {
             sessao = (await db.Sessoes
-                    .AsNoTracking()
-                    .Include(s => s.Corretor)
+                .Include(s => s.Corretor)
                     .Where(s => s.RevogadaEm == null)
                     .ToListAsync(Context.RequestAborted))
                 .SingleOrDefault(s => TokenSeguro.HashesIguais(s.TokenHash, tokenHash));
         }
 
-        if (sessao?.Corretor is not { Ativo: true } corretor)
+        var agora = timeProvider.GetUtcNow();
+        if (sessao?.Corretor is not { Ativo: true } corretor || sessao.ExpiraEm <= agora)
         {
             return AuthenticateResult.Fail("sessao invalida");
         }
+
+        sessao.Renovar(agora.AddDays(30));
+        await db.SaveChangesAsync(Context.RequestAborted);
+        Response.Cookies.Append(
+            CorretorAuthenticationDefaults.CookieName,
+            token,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                SameSite = SameSiteMode.Strict,
+                Secure = Context.RequestServices.GetService<IHostEnvironment>()?.IsDevelopment() != true,
+                Path = "/",
+                MaxAge = TimeSpan.FromDays(30),
+                Expires = sessao.ExpiraEm,
+            });
 
         var id = corretor.Id.ToString("D");
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, id),
             new Claim(CorretorAuthenticationDefaults.CorretorIdClaim, id),
+            new Claim(CorretorAuthenticationDefaults.SessaoIdClaim, sessao.Id.ToString("D")),
             new Claim(ClaimTypes.Name, corretor.Nome),
             new Claim(CorretorAuthenticationDefaults.EspecialidadeClaim, corretor.Especialidade),
         };
@@ -84,6 +101,6 @@ public sealed class CorretorAuthenticationHandler(
     protected override async Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         Response.StatusCode = StatusCodes.Status401Unauthorized;
-        await Response.WriteAsJsonAsync(new ErroPainelResponse("sessao_invalida"));
+        await Response.WriteAsJsonAsync(new ErroApiResponse("sessao_invalida", "A sessão não é válida."));
     }
 }

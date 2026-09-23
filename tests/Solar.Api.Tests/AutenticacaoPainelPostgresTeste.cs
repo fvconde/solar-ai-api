@@ -44,7 +44,7 @@ public sealed class AutenticacaoPainelPostgresTeste
         Assert.Contains("path=/", setCookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("httponly", setCookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("samesite=strict", setCookie, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("max-age=315360000", setCookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("max-age=2592000", setCookie, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("secure", setCookie, StringComparison.OrdinalIgnoreCase);
 
         var sessao = await db.Sessoes.SingleAsync(s => s.CorretorId == id);

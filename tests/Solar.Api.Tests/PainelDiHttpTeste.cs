@@ -18,27 +18,35 @@ public sealed class PainelDiHttpTeste : IClassFixture<PainelApiFactory>
     }
 
     [Fact]
-    public async Task Identificacao_http_resolve_controller_pelo_grafo_real_de_DI()
+    public async Task Login_unico_http_resolve_controller_pelo_grafo_real_de_DI()
     {
         using var resposta = await client.PostAsJsonAsync(
-            "/api/painel/identificacao",
-            new { email = $"di-{Guid.NewGuid():N}@tests.solar.local" });
+            "/api/sessoes",
+            new { email = $"di-{Guid.NewGuid():N}@tests.solar.local", senha = "senha-teste" });
 
-        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
-
-        var contrato = await resposta.Content.ReadFromJsonAsync<IdentificacaoPainelResponse>();
-        Assert.NotNull(contrato);
-        Assert.False(contrato.Cadastrado);
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+        var erro = await resposta.Content.ReadFromJsonAsync<ErroApiResponse>();
+        Assert.Equal("credenciais_invalidas", erro?.Codigo);
     }
 
     [Fact]
-    public async Task Rota_antiga_do_painel_nao_responde_apos_prefixo_api()
+    public async Task Rotas_antigas_de_login_e_sessao_do_painel_saem()
     {
-        using var resposta = await client.PostAsJsonAsync(
+        using var identificacao = await client.PostAsJsonAsync(
+            "/api/painel/identificacao",
+            new { email = $"rota-antiga-{Guid.NewGuid():N}@tests.solar.local" });
+        using var login = await client.PostAsJsonAsync(
+            "/api/painel/sessoes",
+            new { email = $"rota-antiga-{Guid.NewGuid():N}@tests.solar.local", senha = "senha-teste" });
+        using var sessao = await client.GetAsync("/api/painel/sessao");
+        using var prefixoAntigo = await client.PostAsJsonAsync(
             "/painel/identificacao",
             new { email = $"rota-antiga-{Guid.NewGuid():N}@tests.solar.local" });
 
-        Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, identificacao.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, login.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, sessao.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, prefixoAntigo.StatusCode);
     }
 }
 

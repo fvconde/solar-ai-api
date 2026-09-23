@@ -117,7 +117,12 @@ public sealed class Corretor
      Perfil = perfil,
      Regioes = [.. regioes],
      Especialidades = [.. especialidades],
-     StatusCorretor = perfil == PerfisDoPainel.Cliente ? null : StatusDoCorretor.EmAnalise,
+     StatusCorretor = perfil switch
+     {
+         PerfisDoPainel.Cliente => null,
+         PerfisDoPainel.Supervisor => StatusDoCorretor.Aprovado,
+         _ => StatusDoCorretor.EmAnalise,
+     },
      Ativo = true,
      VinculoAtivo = true,
      CriadoEm = em,

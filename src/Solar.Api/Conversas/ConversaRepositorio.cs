@@ -39,6 +39,47 @@ public sealed class ConversaRepositorio(SolarDbContext db)
     public Task<Conversa?> ObterParaEscritaAsync(Guid id, CancellationToken cancellationToken) =>
         CarregarAsync(id, rastrear: true, cancellationToken);
 
+    /// <summary>
+    /// Vincula uma conversa ainda sem dono. Se o lead tambem pertencer a
+    /// conversas sem dono ou de outra conta, cria uma copia isolada antes de
+    /// transferir a posse.
+    /// </summary>
+    public async Task VincularContaAsync(
+        Guid conversaId,
+        Guid contaId,
+        DateTimeOffset em,
+        CancellationToken cancellationToken)
+    {
+        var conversa = await ObterParaEscritaAsync(conversaId, cancellationToken);
+        if (conversa is null || conversa.ContaId is not null)
+        {
+            return;
+        }
+
+        var leadCompartilhado = await db.Conversas
+            .AnyAsync(c => c.LeadId == conversa.LeadId
+                && c.Id != conversaId
+                && c.ContaId != contaId, cancellationToken);
+
+        if (leadCompartilhado)
+        {
+            var copia = conversa.Lead.Clonar(em);
+            db.Leads.Add(copia);
+            conversa.ReapontarLead(copia);
+
+            var encaminhamentos = await db.Encaminhamentos
+                .Where(e => e.ConversaId == conversaId)
+                .ToListAsync(cancellationToken);
+            foreach (var encaminhamento in encaminhamentos)
+            {
+                encaminhamento.ReapontarLead(copia.Id);
+            }
+        }
+
+        conversa.VincularConta(contaId);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<Conversa> RegistrarConsentimentoAsync(
         Guid id,
         string versaoAvisoPrivacidade,
