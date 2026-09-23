@@ -45,6 +45,37 @@ public sealed class S44SessaoPostgresTeste(PainelApiFactory factory) : IClassFix
     }
 
     [Fact]
+    public async Task Uso_da_sessao_renova_expiracao_deslizante_para_mais_trinta_dias()
+    {
+        var (id, email, senha) = await CriarContaAsync(PerfisDoPainel.Cliente);
+        using var client = factory.CreateClient();
+        using var login = await client.PostAsJsonAsync("/api/sessoes", new { email, senha });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        client.DefaultRequestHeaders.Add("Cookie", CookieDe(login));
+
+        var expiracaoAnterior = DateTimeOffset.UtcNow.AddDays(4);
+        await using (var escopo = factory.Services.CreateAsyncScope())
+        {
+            var db = escopo.ServiceProvider.GetRequiredService<SolarDbContext>();
+            var sessao = await db.Sessoes.SingleAsync(s => s.CorretorId == id && s.RevogadaEm == null);
+            sessao.Renovar(expiracaoAnterior);
+            await db.SaveChangesAsync();
+        }
+
+        using var resposta = await client.GetAsync("/api/sessao");
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Contains(resposta.Headers.GetValues("Set-Cookie"), valor =>
+            valor.Contains("max-age=2592000", StringComparison.OrdinalIgnoreCase));
+
+        await using var verificar = factory.Services.CreateAsyncScope();
+        var dbVerificar = verificar.ServiceProvider.GetRequiredService<SolarDbContext>();
+        var sessaoRenovada = await dbVerificar.Sessoes.SingleAsync(s =>
+            s.CorretorId == id && s.RevogadaEm == null);
+        Assert.True(sessaoRenovada.ExpiraEm > expiracaoAnterior);
+        Assert.True(sessaoRenovada.ExpiraEm > DateTimeOffset.UtcNow.AddDays(29));
+    }
+
+    [Fact]
     public async Task Erro_de_login_e_generico_e_bloqueio_de_cinco_tentativas_permanece()
     {
         var (_, email, _) = await CriarContaAsync(PerfisDoPainel.Cliente);
