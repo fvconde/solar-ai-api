@@ -496,6 +496,15 @@ public class PainelController : ControllerBase
             return Unauthorized(new ErroPainelResponse("sessao_invalida"));
         }
 
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Cliente)
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse(
+                    "perfil_insuficiente",
+                    PerfisDoPainel.Corretor));
+        }
+
         if (sessao.Corretor.Perfil == PerfisDoPainel.Corretor &&
             sessao.Corretor.StatusCorretor == StatusDoCorretor.EmAnalise)
         {

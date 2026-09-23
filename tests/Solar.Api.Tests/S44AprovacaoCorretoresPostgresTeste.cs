@@ -84,6 +84,31 @@ public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory
     }
 
     [Fact]
+    public async Task Cliente_recebe_403_na_fila_de_leads_com_ou_sem_filtro()
+    {
+        var (_, email, senha, _) = await CriarContaAsync(
+            PerfisDoPainel.Cliente,
+            "cliente-fila-leads");
+        using var cliente = await LoginAsync(email, senha);
+
+        foreach (var rota in new[]
+                 {
+                     "/api/painel/leads",
+                     "/api/painel/leads?filtro=sem_corretor"
+                 })
+        {
+            using var resposta = await cliente.GetAsync(rota);
+
+            Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
+            var corpo = await resposta.Content
+                .ReadFromJsonAsync<PerfilInsuficientePainelResponse>();
+            Assert.NotNull(corpo);
+            Assert.Equal("perfil_insuficiente", corpo.Erro);
+            Assert.Equal(PerfisDoPainel.Corretor, corpo.PerfilExigido);
+        }
+    }
+
+    [Fact]
     public async Task Supervisor_aprova_corretor_em_analise_define_data_e_envia_email()
     {
         var emails = new EnviadorCapturado();
