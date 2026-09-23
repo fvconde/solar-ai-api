@@ -42,10 +42,14 @@ public static partial class EscolhaDeCorretor
     public static Guid? Escolher(
         string? intencao,
         string? regiao,
+        IReadOnlyList<CorretorCandidato> candidatos) =>
+        EscolherPorEspecialidade(EspecialidadeDe(intencao), regiao, candidatos);
+
+    public static Guid? EscolherPorEspecialidade(
+        string especialidade,
+        string? regiao,
         IReadOnlyList<CorretorCandidato> candidatos)
     {
-        var especialidade = EspecialidadeDe(intencao);
-
         return candidatos
             .Where(candidato => candidato.Ativo)
             .Where(candidato => candidato.Especialidades.Contains(especialidade, StringComparer.Ordinal))

@@ -102,6 +102,73 @@ public sealed class EncaminhamentoRepositorio(SolarDbContext db)
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task RedistribuirAsync(
+        Guid corretorId,
+        DateTimeOffset em,
+        CancellationToken cancellationToken)
+    {
+        var encaminhamentos = await db.Encaminhamentos
+            .Where(e => e.CorretorId == corretorId)
+            .OrderBy(e => e.Em)
+            .ThenBy(e => e.Id)
+            .ToListAsync(cancellationToken);
+        if (encaminhamentos.Count == 0)
+        {
+            return;
+        }
+
+        var conversaIds = encaminhamentos.Select(e => e.ConversaId).ToArray();
+        var conversas = await db.Conversas
+            .Include(c => c.Lead)
+            .Where(c => conversaIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, cancellationToken);
+
+        foreach (var encaminhamento in encaminhamentos)
+        {
+            encaminhamento.Desatribuir(em);
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        foreach (var encaminhamento in encaminhamentos)
+        {
+            var conversa = conversas[encaminhamento.ConversaId];
+            var corretores = await CandidatosAsync(encaminhamento.Especialidade, cancellationToken);
+            var escolhido = EscolhaDeCorretor.EscolherPorEspecialidade(
+                encaminhamento.Especialidade,
+                conversa.Lead.Regiao,
+                corretores);
+            encaminhamento.Atribuir(escolhido, em);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private async Task<IReadOnlyList<CorretorCandidato>> CandidatosAsync(
+        string especialidade,
+        CancellationToken cancellationToken)
+    {
+        var corretores = await db.Corretores
+            .AsNoTracking()
+            .Where(c => c.Perfil == PerfisDoPainel.Corretor
+                && c.StatusCorretor == StatusDoCorretor.Aprovado
+                && c.Especialidades.Contains(especialidade))
+            .Select(c => new
+            {
+                c.Id,
+                c.Especialidades,
+                c.Regioes,
+                c.Ativo,
+                c.CriadoEm,
+                Carga = db.Encaminhamentos.Count(e => e.CorretorId == c.Id),
+                Ultimo = db.Encaminhamentos
+                    .Where(e => e.CorretorId == c.Id)
+                    .Max(e => (DateTimeOffset?)e.Em),
+            })
+            .ToListAsync(cancellationToken);
+
+        return [.. corretores.Select(c => new CorretorCandidato(
+            c.Id, c.Especialidades, c.Regioes, c.Ativo, c.Carga, c.Ultimo, c.CriadoEm))];
+    }
+
     private async Task<AtribuicaoJaGravada?> AtribuidoAsync(Guid conversaId, CancellationToken cancellationToken) =>
         await db.Encaminhamentos
             .AsNoTracking()

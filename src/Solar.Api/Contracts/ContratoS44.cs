@@ -50,6 +50,18 @@ public sealed record ContaResponse(
     ConsentimentoContaResponse? Consentimento,
     int ConversasSalvas);
 
+public sealed record AtualizarContaRequest(
+    string? Nome,
+    string? Telefone,
+    string? Email,
+    string? SenhaAtual,
+    IReadOnlyList<string>? Regioes,
+    IReadOnlyList<string>? Especialidades);
+
+public sealed record AlterarSenhaContaRequest(string? SenhaAtual, string? NovaSenha);
+
+public sealed record ExcluirContaRequest(string? Email);
+
 public sealed record ValidacaoResponse(
     string Codigo,
     IReadOnlyDictionary<string, string> Campos);
