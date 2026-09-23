@@ -10,6 +10,7 @@ using Solar.Api.Conversas;
 using Solar.Api.Dominio;
 using Solar.Api.Persistencia;
 using Solar.Api.Seguranca;
+using Solar.Api.Servicos;
 
 namespace Solar.Api.Controllers;
 
@@ -101,7 +102,7 @@ public sealed class SessoesController(
             await db.SaveChangesAsync(cancellationToken);
             DefinirCookie(token, sessao.ExpiraEm);
 
-            return Ok(await ParaContratoAsync(conta, cancellationToken));
+            return Ok(await ProjecoesS44.SessaoAsync(db, conta, cancellationToken));
         }
         finally
         {
@@ -125,7 +126,7 @@ public sealed class SessoesController(
             .SingleOrDefaultAsync(c => c.Id == id && c.Ativo, cancellationToken);
         return conta is null
             ? Unauthorized(new ErroApiResponse("sessao_invalida", "A sessão não é válida."))
-            : Ok(await ParaContratoAsync(conta, cancellationToken));
+            : Ok(await ProjecoesS44.SessaoAsync(db, conta, cancellationToken));
     }
 
     [HttpDelete("/api/sessao")]
@@ -162,34 +163,6 @@ public sealed class SessoesController(
         var valor = User.FindFirstValue(CorretorAuthenticationDefaults.CorretorIdClaim)
             ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(valor, out var id) ? id : null;
-    }
-
-    private async Task<SessaoResponse> ParaContratoAsync(Corretor conta, CancellationToken cancellationToken)
-    {
-        var supervisor = conta.Perfil == PerfisDoPainel.Supervisor;
-        var corretor = conta.Perfil == PerfisDoPainel.Corretor;
-        IReadOnlyList<string> filtros = supervisor
-            ? conta.VinculoAtivo
-                ? ["minha_fila", "sem_corretor", "visao_geral"]
-                : ["sem_corretor", "visao_geral"]
-            : corretor ? ["meus_leads"] : [];
-        var filtroInicial = filtros.Count == 0
-            ? null
-            : supervisor ? conta.VinculoAtivo ? "minha_fila" : "sem_corretor" : "meus_leads";
-        int? pendentes = supervisor
-            ? await db.Corretores.CountAsync(c => c.StatusCorretor == StatusDoCorretor.EmAnalise, cancellationToken)
-            : null;
-        Guid? corretorId = corretor || (supervisor && conta.VinculoAtivo) ? conta.Id : null;
-
-        return new SessaoResponse(
-            new UsuarioResponse(conta.Id, conta.Nome, conta.Email),
-            conta.Perfil,
-            conta.Perfil == PerfisDoPainel.Cliente ? null : conta.StatusCorretor,
-            corretorId,
-            conta.VinculoAtivo,
-            filtros,
-            filtroInicial,
-            pendentes);
     }
 
     private void DefinirCookie(string token, DateTimeOffset expiraEm) => Response.Cookies.Append(
