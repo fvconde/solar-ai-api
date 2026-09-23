@@ -42,11 +42,19 @@ public sealed class PainelDiHttpTeste : IClassFixture<PainelApiFactory>
         using var prefixoAntigo = await client.PostAsJsonAsync(
             "/painel/identificacao",
             new { email = $"rota-antiga-{Guid.NewGuid():N}@tests.solar.local" });
+        using var recuperacaoAntiga = await client.PostAsJsonAsync(
+            "/api/painel/senha/recuperacoes",
+            new { email = $"rota-antiga-{Guid.NewGuid():N}@tests.solar.local" });
+        using var validacaoAntiga = await client.GetAsync("/api/painel/senha/recuperacoes/token-antigo");
+        using var redefinicaoAntiga = await client.PostAsJsonAsync("/api/painel/senha", new { });
 
         Assert.Equal(HttpStatusCode.NotFound, identificacao.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, login.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, sessao.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, prefixoAntigo.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, recuperacaoAntiga.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, validacaoAntiga.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, redefinicaoAntiga.StatusCode);
     }
 }
 

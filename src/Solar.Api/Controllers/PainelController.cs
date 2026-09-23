@@ -198,7 +198,7 @@ public class PainelController : ControllerBase
             : Ok(ParaContrato(corretor));
     }
 
-    [HttpPost("senha/recuperacoes")]
+    [HttpPost("/api/senha/recuperacoes")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     public async Task<IActionResult> SolicitarRecuperacaoAsync(
@@ -258,7 +258,7 @@ public class PainelController : ControllerBase
         }
     }
 
-    [HttpGet("senha/recuperacoes/{token}")]
+    [HttpGet("/api/senha/recuperacoes/{token}")]
     [AllowAnonymous]
     [ProducesResponseType<RecuperacaoSenhaTokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status410Gone)]
@@ -283,12 +283,12 @@ public class PainelController : ControllerBase
         return Ok(new RecuperacaoSenhaTokenResponse(recuperacao.Corretor.Email));
     }
 
-    [HttpPost("senha")]
+    [HttpPost("/api/senha")]
     [AllowAnonymous]
-    [ProducesResponseType<SessaoPainelResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<SessaoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErroApiResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status410Gone)]
-    public async Task<ActionResult<SessaoPainelResponse>> RedefinirSenhaAsync(
+    public async Task<ActionResult<SessaoResponse>> RedefinirSenhaAsync(
         [FromBody] NovaSenhaPainelRequest? request,
         CancellationToken cancellationToken)
     {
@@ -350,7 +350,7 @@ public class PainelController : ControllerBase
             }
 
             DefinirCookieDeSessao(tokenSessao);
-            return Ok(ParaContrato(corretor));
+        return Ok(await ProjecoesS44.SessaoAsync(db, corretor, cancellationToken));
         }
         finally
         {
