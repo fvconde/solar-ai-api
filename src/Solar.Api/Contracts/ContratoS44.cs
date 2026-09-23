@@ -62,6 +62,8 @@ public sealed record AlterarSenhaContaRequest(string? SenhaAtual, string? NovaSe
 
 public sealed record ExcluirContaRequest(string? Email);
 
+public sealed record ConversaResumo(Guid Id, string Titulo, DateTimeOffset AtualizadaEm, string Estado);
+
 public sealed record ValidacaoResponse(
     string Codigo,
     IReadOnlyDictionary<string, string> Campos);

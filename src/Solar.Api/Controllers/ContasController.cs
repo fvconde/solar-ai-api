@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -81,6 +82,51 @@ public sealed class ContasController(
         return conta is null
             ? Unauthorized(new ErroApiResponse("sessao_invalida", "A sessão não é válida."))
             : Ok(await ProjecoesS44.ContaAsync(db, conta, cancellationToken));
+    }
+
+    [HttpGet("/api/conta/conversas")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType<IReadOnlyList<ConversaResumo>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErroApiResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ErroApiResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<ConversaResumo>>> ListarConversasAsync(
+        CancellationToken cancellationToken)
+    {
+        var conta = await ContaAtualAsync(cancellationToken);
+        if (conta is null)
+        {
+            return Unauthorized(new ErroApiResponse("sessao_invalida", "A sessão não é válida."));
+        }
+        if (conta.Perfil != PerfisDoPainel.Cliente)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new ErroApiResponse("nao_permitido", "O perfil não possui histórico de conversas de cliente."));
+        }
+
+        var conversasDaConta = await db.Conversas
+            .AsNoTracking()
+            .Where(c => c.ContaId == conta.Id)
+            .OrderByDescending(c => c.AtualizadaEm)
+            .ThenByDescending(c => c.CriadaEm)
+            .Select(c => new
+            {
+                c.Id,
+                c.AtualizadaEm,
+                c.CriadaEm,
+                c.Lead.Intencao,
+                c.Lead.Quartos,
+                c.Lead.Regiao,
+                c.Desfecho,
+                TemEncaminhamento = db.Encaminhamentos.Any(e => e.ConversaId == c.Id),
+            })
+            .ToListAsync(cancellationToken);
+
+        IReadOnlyList<ConversaResumo> resposta = [.. conversasDaConta.Select(c => new ConversaResumo(
+            c.Id,
+            TituloDaConversa(c.Intencao, c.Quartos, c.Regiao, c.CriadaEm),
+            c.AtualizadaEm,
+            c.TemEncaminhamento ? "com_corretor" : c.Desfecho is not null ? "encerrada" : "em_andamento"))];
+        return Ok(resposta);
     }
 
     [HttpPatch("/api/conta")]
@@ -475,6 +521,23 @@ public sealed class ContasController(
             .Select(valor => valor.Trim().ToLowerInvariant())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+
+    private static string TituloDaConversa(string? intencao, int? quartos, string? regiao, DateTimeOffset criadaEm)
+    {
+        var detalhes = new List<string>(capacity: 2);
+        var intencaoCurta = intencao switch
+        {
+            Intencoes.Compra => "Compra",
+            Intencoes.Aluguel => "Aluguel",
+            Intencoes.Investimento => "Investimento",
+            _ => null,
+        };
+        if (quartos is { } quantidade) detalhes.Add($"{quantidade} quartos");
+        if (!string.IsNullOrWhiteSpace(regiao)) detalhes.Add($"na {regiao.Trim().ToLowerInvariant()}");
+        if (detalhes.Count > 0) return string.Join(" ", detalhes);
+        return intencaoCurta
+            ?? $"Conversa de {criadaEm.ToString("dd MMM", CultureInfo.GetCultureInfo("pt-BR")).ToLowerInvariant()}";
+    }
 
     private static bool EhConflitoDeEmail(DbUpdateException erro) =>
         erro.InnerException is PostgresException
