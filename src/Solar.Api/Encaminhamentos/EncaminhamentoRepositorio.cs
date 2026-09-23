@@ -40,12 +40,14 @@ public sealed class EncaminhamentoRepositorio(SolarDbContext db)
 
         var corretores = await db.Corretores
             .AsNoTracking()
-            .Where(corretor => corretor.Especialidade == especialidade)
+            .Where(corretor => corretor.Perfil == PerfisDoPainel.Corretor
+                && corretor.StatusCorretor == StatusDoCorretor.Aprovado
+                && corretor.Especialidades.Contains(especialidade))
             .Select(corretor => new
             {
                 corretor.Id,
                 corretor.Nome,
-                corretor.Especialidade,
+                corretor.Especialidades,
                 corretor.Regioes,
                 corretor.Ativo,
                 corretor.CriadoEm,
@@ -61,7 +63,7 @@ public sealed class EncaminhamentoRepositorio(SolarDbContext db)
             conversa.Lead.Regiao,
             [.. corretores.Select(corretor => new CorretorCandidato(
                 corretor.Id,
-                corretor.Especialidade,
+                corretor.Especialidades,
                 corretor.Regioes,
                 corretor.Ativo,
                 corretor.Carga,

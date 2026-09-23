@@ -20,15 +20,24 @@ public sealed class SessaoCorretor
 
  public DateTimeOffset CriadaEm { get; private set; }
 
+ public DateTimeOffset ExpiraEm { get; private set; }
+
  public DateTimeOffset? RevogadaEm { get; private set; }
 
- public static SessaoCorretor Nova(Guid corretorId, byte[] tokenHash, DateTimeOffset criadaEm) => new()
+ public static SessaoCorretor Nova(
+     Guid corretorId,
+     byte[] tokenHash,
+     DateTimeOffset criadaEm,
+     DateTimeOffset? expiraEm = null) => new()
  {
   Id = Guid.NewGuid(),
   CorretorId = corretorId,
   TokenHash = tokenHash,
   CriadaEm = criadaEm,
+  ExpiraEm = expiraEm ?? criadaEm.AddDays(30),
  };
 
  public void Revogar(DateTimeOffset em) => RevogadaEm ??= em;
+
+ public void Renovar(DateTimeOffset expiraEm) => ExpiraEm = expiraEm;
 }

@@ -1,9 +1,18 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace Solar.Api.Dominio;
 
 public static class PerfisDoPainel
 {
+    public const string Cliente = "cliente";
     public const string Corretor = "corretor";
     public const string Supervisor = "supervisor";
+}
+
+public static class StatusDoCorretor
+{
+    public const string EmAnalise = "em_analise";
+    public const string Aprovado = "aprovado";
 }
 
 public static class Especialidades
@@ -26,7 +35,15 @@ public sealed class Corretor
 
     public string Nome { get; private set; } = string.Empty;
 
-    public string Especialidade { get; private set; } = Especialidades.Moradia;
+    public List<string> Especialidades { get; private set; } = [];
+
+    // Compatibilidade interna com consumidores do painel anteriores ao S-44.
+    [NotMapped]
+    public string Especialidade
+    {
+        get => Especialidades.FirstOrDefault() ?? Solar.Api.Dominio.Especialidades.Moradia;
+        private set => Especialidades = string.IsNullOrWhiteSpace(value) ? [] : [value];
+    }
 
     public string Perfil { get; private set; } = PerfisDoPainel.Corretor;
 
@@ -58,6 +75,16 @@ public sealed class Corretor
 
     public bool Ativo { get; private set; }
 
+    public string? Telefone { get; private set; }
+
+    public string? StatusCorretor { get; private set; }
+
+    public DateTimeOffset? AprovadoEm { get; private set; }
+
+    public DateTimeOffset? ConsentimentoEm { get; private set; }
+
+    public string? VersaoAvisoPrivacidade { get; private set; }
+
  public DateTimeOffset CriadoEm { get; private set; }
 
  public void DefinirCredenciais(string email, string emailNormalizado, string senhaHash)
@@ -68,6 +95,59 @@ public sealed class Corretor
  }
 
  public void DefinirSenhaHash(string senhaHash) => SenhaHash = senhaHash;
+
+ public static Corretor NovaConta(
+     string nome,
+     string email,
+     string emailNormalizado,
+     string telefone,
+     string senhaHash,
+     string perfil,
+     IReadOnlyList<string> regioes,
+     IReadOnlyList<string> especialidades,
+     string versaoAvisoPrivacidade,
+     DateTimeOffset em) => new()
+ {
+     Id = Guid.NewGuid(),
+     Nome = nome,
+     Email = email,
+     EmailNormalizado = emailNormalizado,
+     Telefone = telefone,
+     SenhaHash = senhaHash,
+     Perfil = perfil,
+     Regioes = [.. regioes],
+     Especialidades = [.. especialidades],
+     StatusCorretor = perfil == PerfisDoPainel.Cliente ? null : StatusDoCorretor.EmAnalise,
+     Ativo = true,
+     VinculoAtivo = true,
+     CriadoEm = em,
+     ConsentimentoEm = em,
+     VersaoAvisoPrivacidade = versaoAvisoPrivacidade,
+ };
+
+ public void AtualizarNome(string nome) => Nome = nome;
+
+ public void AtualizarEmail(string email, string emailNormalizado)
+ {
+     Email = email;
+     EmailNormalizado = emailNormalizado;
+ }
+
+ public void AtualizarTelefone(string telefone) => Telefone = telefone;
+
+ public void AtualizarAtuacao(IReadOnlyList<string> regioes, IReadOnlyList<string> especialidades)
+ {
+     Regioes = [.. regioes];
+     Especialidades = [.. especialidades];
+ }
+
+ public void Aprovar(DateTimeOffset em)
+ {
+     StatusCorretor = StatusDoCorretor.Aprovado;
+     AprovadoEm = em;
+ }
+
+ public void Desativar() => Ativo = false;
 
  public void RegistrarFalhaDeSenha(DateTimeOffset agora, TimeSpan duracaoBloqueio)
  {

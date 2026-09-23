@@ -9,12 +9,25 @@ namespace Solar.Api.Encaminhamentos;
 /// <summary>Um corretor e a carga que ele ja carrega, no formato que a escolha le.</summary>
 public sealed record CorretorCandidato(
     Guid Id,
-    string Especialidade,
+    IReadOnlyList<string> Especialidades,
     IReadOnlyList<string> Regioes,
     bool Ativo,
     int CargaAberta,
     DateTimeOffset? UltimoEncaminhamentoEm,
-    DateTimeOffset CriadoEm);
+    DateTimeOffset CriadoEm)
+{
+    public CorretorCandidato(
+        Guid id,
+        string especialidade,
+        IReadOnlyList<string> regioes,
+        bool ativo,
+        int cargaAberta,
+        DateTimeOffset? ultimoEncaminhamentoEm,
+        DateTimeOffset criadoEm)
+        : this(id, [especialidade], regioes, ativo, cargaAberta, ultimoEncaminhamentoEm, criadoEm)
+    {
+    }
+}
 
 /// <summary>
 /// Decide quem assume o lead. Puro e deterministico: mesma entrada, mesma saida,
@@ -35,7 +48,7 @@ public static partial class EscolhaDeCorretor
 
         return candidatos
             .Where(candidato => candidato.Ativo)
-            .Where(candidato => candidato.Especialidade == especialidade)
+            .Where(candidato => candidato.Especialidades.Contains(especialidade, StringComparer.Ordinal))
             .Where(candidato => Cobre(candidato.Regioes, regiao))
             .OrderBy(candidato => candidato.CargaAberta)
             .ThenBy(candidato => candidato.UltimoEncaminhamentoEm ?? DateTimeOffset.MinValue)

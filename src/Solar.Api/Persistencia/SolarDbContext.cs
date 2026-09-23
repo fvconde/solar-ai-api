@@ -50,7 +50,7 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             corretor.HasKey(c => c.Id);
             corretor.Property(c => c.Id).ValueGeneratedNever();
             corretor.Property(c => c.Nome).HasMaxLength(200).IsRequired();
-            corretor.Property(c => c.Especialidade).HasMaxLength(20).IsRequired();
+            corretor.Property(c => c.Especialidades).HasColumnType("text[]").IsRequired();
             corretor.Property(c => c.Perfil)
                 .HasMaxLength(20)
                 .IsRequired()
@@ -64,8 +64,12 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             corretor.Property(c => c.SenhaHash).HasMaxLength(500);
             corretor.Property(c => c.TentativasSenha).HasDefaultValue(0).IsRequired();
             corretor.Property(c => c.Regioes).IsRequired();
+            corretor.Property(c => c.Telefone).HasMaxLength(11);
+            corretor.Property(c => c.StatusCorretor).HasMaxLength(20);
+            corretor.Property(c => c.VersaoAvisoPrivacidade).HasMaxLength(AvisoPrivacidade.LimiteVersao);
 
-            corretor.HasIndex(c => new { c.Especialidade, c.Ativo });
+            corretor.HasIndex(c => c.Especialidades).HasMethod("gin");
+            corretor.HasIndex(c => new { c.StatusCorretor, c.CriadoEm });
             corretor.HasIndex(c => c.EmailNormalizado).IsUnique();
         });
 
@@ -76,6 +80,7 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
                 .HasColumnType("bytea")
                 .HasMaxLength(32)
                 .IsRequired();
+            sessao.Property(s => s.ExpiraEm).IsRequired();
 
             sessao.HasOne(s => s.Corretor)
                 .WithMany()
@@ -167,6 +172,11 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             conversa.Property(c => c.Canal).HasMaxLength(20).IsRequired();
             conversa.Property(c => c.TentativasReengajamento).IsRequired().HasDefaultValue(0);
             conversa.Property(c => c.Desfecho).HasMaxLength(30);
+
+            conversa.HasOne<Corretor>()
+                .WithMany()
+                .HasForeignKey(c => c.ContaId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             conversa.HasOne(c => c.Lead)
                 .WithMany()

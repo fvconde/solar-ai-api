@@ -26,6 +26,8 @@ public sealed class Conversa
 
     public Guid LeadId { get; private set; }
 
+    public Guid? ContaId { get; private set; }
+
     public Lead Lead { get; private set; } = null!;
 
     public DateTimeOffset CriadaEm { get; private set; }
@@ -61,6 +63,8 @@ public sealed class Conversa
         Lead = canonico;
         LeadId = canonico.Id;
     }
+
+    public void VincularConta(Guid contaId) => ContaId = contaId;
 
     /// <summary>
     /// Grava as duas falas do turno e funde o perfil. So roda depois de o agente
