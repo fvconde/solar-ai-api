@@ -64,6 +64,17 @@ public sealed record ExcluirContaRequest(string? Email);
 
 public sealed record ConversaResumo(Guid Id, string Titulo, DateTimeOffset AtualizadaEm, string Estado);
 
+public sealed record CorretorPendente(
+    Guid Id,
+    string Nome,
+    string Email,
+    string Telefone,
+    IReadOnlyList<string> Regioes,
+    IReadOnlyList<string> Especialidades,
+    DateTimeOffset CriadoEm);
+
+public sealed record RecusaCorretorRequest(string? Motivo);
+
 public sealed record ValidacaoResponse(
     string Codigo,
     IReadOnlyDictionary<string, string> Campos);

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Solar.Api.Contracts;
 using Solar.Api.Conversas;
 using Solar.Api.Dominio;
+using Solar.Api.Encaminhamentos;
 using Solar.Api.Persistencia;
 using Solar.Api.Seguranca;
 using Solar.Api.Servicos;
@@ -37,6 +38,7 @@ public class PainelController : ControllerBase
     private readonly IHostEnvironment ambiente;
     private readonly ConversaRepositorio conversas;
     private readonly ILogger<PainelController> logger;
+    private readonly EncaminhamentoRepositorio encaminhamentos;
 
     public PainelController(
         SolarDbContext db,
@@ -47,7 +49,8 @@ public class PainelController : ControllerBase
         TimeProvider timeProvider,
         IHostEnvironment ambiente,
         ConversaRepositorio? conversas = null,
-        ILogger<PainelController>? logger = null)
+        ILogger<PainelController>? logger = null,
+        EncaminhamentoRepositorio? encaminhamentos = null)
     {
         this.db = db;
         this.configuracao = configuracao;
@@ -58,6 +61,7 @@ public class PainelController : ControllerBase
         this.ambiente = ambiente;
         this.conversas = conversas ?? new ConversaRepositorio(db);
         this.logger = logger ?? NullLogger<PainelController>.Instance;
+        this.encaminhamentos = encaminhamentos ?? new EncaminhamentoRepositorio(db);
     }
 
     [NonAction]
@@ -354,6 +358,128 @@ public class PainelController : ControllerBase
         }
     }
 
+    [HttpGet("corretores/pendentes")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType<IReadOnlyList<CorretorPendente>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<PerfilInsuficientePainelResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<CorretorPendente>>> ListarCorretoresPendentesAsync(
+        CancellationToken cancellationToken)
+    {
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
+        {
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+        if (sessao.Corretor.Perfil != PerfisDoPainel.Supervisor)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse("perfil_insuficiente", PerfisDoPainel.Supervisor));
+        }
+
+        var pendentes = await db.Corretores
+            .AsNoTracking()
+            .Where(c => c.Perfil == PerfisDoPainel.Corretor &&
+                c.StatusCorretor == StatusDoCorretor.EmAnalise && c.Ativo)
+            .OrderBy(c => c.CriadoEm)
+            .ThenBy(c => c.Id)
+            .ToListAsync(cancellationToken);
+
+        return Ok(pendentes.Select(c => new CorretorPendente(
+            c.Id,
+            c.Nome,
+            c.Email,
+            c.Telefone ?? string.Empty,
+            c.Regioes,
+            c.Especialidades,
+            c.CriadoEm)).ToArray());
+    }
+
+    [HttpPost("corretores/{id:guid}/aprovacao")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<PerfilInsuficientePainelResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> AprovarCorretorAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
+        {
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+        if (sessao.Corretor.Perfil != PerfisDoPainel.Supervisor)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse("perfil_insuficiente", PerfisDoPainel.Supervisor));
+        }
+
+        var corretor = await db.Corretores.SingleOrDefaultAsync(c =>
+            c.Id == id && c.Perfil == PerfisDoPainel.Corretor &&
+            c.StatusCorretor == StatusDoCorretor.EmAnalise && c.Ativo,
+            cancellationToken);
+        if (corretor is null)
+        {
+            return NotFound(new ErroPainelResponse("corretor_nao_encontrado"));
+        }
+
+        corretor.Aprovar(timeProvider.GetUtcNow());
+        await db.SaveChangesAsync(cancellationToken);
+        await enviadorEmail.EnviarAprovacaoAsync(
+            corretor.Id, corretor.Email, corretor.Nome, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("corretores/{id:guid}/recusa")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidacaoResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<PerfilInsuficientePainelResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> RecusarCorretorAsync(
+        Guid id,
+        [FromBody] RecusaCorretorRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
+        {
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+        if (sessao.Corretor.Perfil != PerfisDoPainel.Supervisor)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse("perfil_insuficiente", PerfisDoPainel.Supervisor));
+        }
+        if (request?.Motivo?.Length > 500)
+        {
+            return BadRequest(new ValidacaoResponse(
+                "validacao", new Dictionary<string, string> { ["motivo"] = "longo" }));
+        }
+
+        var corretor = await db.Corretores.SingleOrDefaultAsync(c =>
+            c.Id == id && c.Perfil == PerfisDoPainel.Corretor &&
+            c.StatusCorretor == StatusDoCorretor.EmAnalise && c.Ativo,
+            cancellationToken);
+        if (corretor is null)
+        {
+            return NotFound(new ErroPainelResponse("corretor_nao_encontrado"));
+        }
+
+        var email = corretor.Email;
+        var nome = corretor.Nome;
+        var motivo = string.IsNullOrWhiteSpace(request?.Motivo) ? null : request.Motivo.Trim();
+        await using var transacao = await db.Database.BeginTransactionAsync(cancellationToken);
+        await encaminhamentos.RedistribuirAsync(corretor.Id, timeProvider.GetUtcNow(), cancellationToken);
+        db.Corretores.Remove(corretor);
+        await db.SaveChangesAsync(cancellationToken);
+        await transacao.CommitAsync(cancellationToken);
+
+        await enviadorEmail.EnviarRecusaAsync(id, email, nome, motivo, cancellationToken);
+        return NoContent();
+    }
+
     [HttpGet("leads")]
     [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
     [ProducesResponseType<FilaLeadsResponse>(StatusCodes.Status200OK)]
@@ -368,6 +494,12 @@ public class PainelController : ControllerBase
         if (sessao is null)
         {
             return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Corretor &&
+            sessao.Corretor.StatusCorretor == StatusDoCorretor.EmAnalise)
+        {
+            return Ok(new FilaLeadsResponse([], 0));
         }
 
         var filtroEfetivo = string.IsNullOrWhiteSpace(filtro)
@@ -469,6 +601,12 @@ public class PainelController : ControllerBase
         if (sessao is null)
         {
             return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Corretor &&
+            sessao.Corretor.StatusCorretor == StatusDoCorretor.EmAnalise)
+        {
+            return NotFound(new ErroPainelResponse("lead_nao_encontrado"));
         }
 
         var lead = await db.Leads
