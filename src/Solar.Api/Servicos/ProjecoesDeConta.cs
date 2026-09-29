@@ -5,9 +5,9 @@ using Solar.Api.Persistencia;
 
 namespace Solar.Api.Servicos;
 
-public static class ProjecoesS44
+public static class ProjecoesDeConta
 {
-    public static async Task<SessaoResponse> SessaoAsync(
+    public static async Task<SessaoResponse> ProjetarSessaoAsync(
         SolarDbContext db,
         Corretor conta,
         CancellationToken cancellationToken)
@@ -38,7 +38,7 @@ public static class ProjecoesS44
             pendentes);
     }
 
-    public static async Task<ContaResponse> ContaAsync(
+    public static async Task<ContaResponse> ProjetarContaAsync(
         SolarDbContext db,
         Corretor conta,
         CancellationToken cancellationToken)

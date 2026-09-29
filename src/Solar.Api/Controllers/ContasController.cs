@@ -81,7 +81,7 @@ public sealed class ContasController(
         var conta = await ContaAtualAsync(cancellationToken);
         return conta is null
             ? Unauthorized(new ErroApiResponse("sessao_invalida", "A sessão não é válida."))
-            : Ok(await ProjecoesS44.ContaAsync(db, conta, cancellationToken));
+            : Ok(await ProjecoesDeConta.ProjetarContaAsync(db, conta, cancellationToken));
     }
 
     [HttpGet("/api/conta/conversas")]
@@ -232,7 +232,7 @@ public sealed class ContasController(
         {
             return Conflict(new ErroApiResponse("email_em_uso", "O e-mail já está em uso."));
         }
-        return Ok(await ProjecoesS44.ContaAsync(db, conta, cancellationToken));
+        return Ok(await ProjecoesDeConta.ProjetarContaAsync(db, conta, cancellationToken));
     }
 
     [HttpPost("/api/conta/senha")]
@@ -461,7 +461,7 @@ public sealed class ContasController(
 
         return StatusCode(
             StatusCodes.Status201Created,
-            await ProjecoesS44.SessaoAsync(db, conta, cancellationToken));
+            await ProjecoesDeConta.ProjetarSessaoAsync(db, conta, cancellationToken));
     }
 
     private static Dictionary<string, string> Validar(

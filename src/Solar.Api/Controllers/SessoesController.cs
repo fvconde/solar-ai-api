@@ -102,7 +102,7 @@ public sealed class SessoesController(
             await db.SaveChangesAsync(cancellationToken);
             DefinirCookie(token, sessao.ExpiraEm);
 
-            return Ok(await ProjecoesS44.SessaoAsync(db, conta, cancellationToken));
+            return Ok(await ProjecoesDeConta.ProjetarSessaoAsync(db, conta, cancellationToken));
         }
         finally
         {
@@ -126,7 +126,7 @@ public sealed class SessoesController(
             .SingleOrDefaultAsync(c => c.Id == id && c.Ativo, cancellationToken);
         return conta is null
             ? Unauthorized(new ErroApiResponse("sessao_invalida", "A sessão não é válida."))
-            : Ok(await ProjecoesS44.SessaoAsync(db, conta, cancellationToken));
+            : Ok(await ProjecoesDeConta.ProjetarSessaoAsync(db, conta, cancellationToken));
     }
 
     [HttpDelete("/api/sessao")]

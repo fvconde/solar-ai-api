@@ -350,7 +350,7 @@ public class PainelController : ControllerBase
             }
 
             DefinirCookieDeSessao(tokenSessao);
-        return Ok(await ProjecoesS44.SessaoAsync(db, corretor, cancellationToken));
+        return Ok(await ProjecoesDeConta.ProjetarSessaoAsync(db, corretor, cancellationToken));
         }
         finally
         {
