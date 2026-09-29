@@ -11,7 +11,7 @@ using Solar.Api.Persistencia;
 namespace Solar.Api.Tests;
 
 [Collection(PostgresTestDatabase.CollectionName)]
-public sealed class S44ConversaPossePostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
+public sealed class PosseDeConversasPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
 {
     [Fact]
     public async Task Conversa_vincula_por_login_cadastro_e_sessao_nova_com_isolamento_de_lead_e_404()
@@ -42,7 +42,7 @@ public sealed class S44ConversaPossePostgresTeste(PainelApiFactory factory) : IC
         Assert.Equal(HttpStatusCode.OK, contatoSemDona.StatusCode);
 
         var (donaId, emailDona, senhaDona) = await CriarContaAsync("dona");
-        using var dona = await LoginAsync(emailDona, senhaDona, conversaDona);
+        using var dona = await CriarSessaoAsync(emailDona, senhaDona, conversaDona);
         Assert.Equal(donaId, await ContaDaConversaAsync(conversaDona));
         var idLeadOriginal = await LeadDaConversaAsync(conversaSemDona);
         var idLeadDono = await LeadDaConversaAsync(conversaDona);
@@ -102,7 +102,7 @@ public sealed class S44ConversaPossePostgresTeste(PainelApiFactory factory) : IC
         Assert.Equal(HttpStatusCode.OK, contatoMesmaConta.StatusCode);
         Assert.Equal(idLeadDono, await LeadDaConversaAsync(conversaNova));
 
-        using var outraSessao = await LoginAsync(emailCadastro, "Senha-segura-44", conversaSemDona);
+        using var outraSessao = await CriarSessaoAsync(emailCadastro, "Senha-segura-44", conversaSemDona);
         Assert.Equal(cadastroId, await ContaDaConversaAsync(conversaSemDona));
         using var leituraDeOutraConta = await outraSessao.GetAsync($"/conversas/{conversaDona:D}");
         Assert.Equal(HttpStatusCode.NotFound, leituraDeOutraConta.StatusCode);
@@ -134,7 +134,7 @@ public sealed class S44ConversaPossePostgresTeste(PainelApiFactory factory) : IC
         return (conta.Id, email, senha);
     }
 
-    private async Task<HttpClient> LoginAsync(string email, string senha, Guid conversaId)
+    private async Task<HttpClient> CriarSessaoAsync(string email, string senha, Guid conversaId)
     {
         var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
         using var resposta = await client.PostAsJsonAsync("/api/sessoes", new { email, senha, conversaId });

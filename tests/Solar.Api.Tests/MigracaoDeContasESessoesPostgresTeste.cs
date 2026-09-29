@@ -5,7 +5,7 @@ using Solar.Api.Persistencia;
 namespace Solar.Api.Tests;
 
 [Collection(PostgresTestDatabase.CollectionName)]
-public sealed class S44MigracaoPostgresTeste
+public sealed class MigracaoDeContasESessoesPostgresTeste
 {
     [Fact]
     public async Task Migracoes_de_contas_aplicam_em_schema_postgres_vazio()

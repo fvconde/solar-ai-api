@@ -14,7 +14,7 @@ using Solar.Api.Servicos;
 namespace Solar.Api.Tests;
 
 [Collection(PostgresTestDatabase.CollectionName)]
-public sealed class S44RecuperacaoSenhaPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
+public sealed class RecuperacaoDeSenhaPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
 {
     [Fact]
     public async Task Rotas_unificadas_redefinem_senha_de_todos_os_papeis_e_revogam_sessoes_anteriores()
@@ -42,7 +42,7 @@ public sealed class S44RecuperacaoSenhaPostgresTeste(PainelApiFactory factory) :
         })
         {
             var (_, email, senha) = await CriarContaAsync(perfil);
-            using var sessaoAnterior = await LoginAsync(host, email, senha);
+            using var sessaoAnterior = await CriarSessaoAsync(host, email, senha);
             using var solicitado = await sessaoAnterior.PostAsJsonAsync(
                 "/api/senha/recuperacoes", new { email });
             Assert.Equal(HttpStatusCode.Accepted, solicitado.StatusCode);
@@ -78,7 +78,7 @@ public sealed class S44RecuperacaoSenhaPostgresTeste(PainelApiFactory factory) :
                 "/api/senha", new { token, novaSenha = "Outra-senha-S44" });
             Assert.Equal(HttpStatusCode.Gone, tokenConsumido.StatusCode);
 
-            using var novaSenhaLogin = await LoginAsync(host, email, novaSenha);
+            using var novaSenhaLogin = await CriarSessaoAsync(host, email, novaSenha);
             using var senhaAntigaLogin = await factory.CreateClient().PostAsJsonAsync(
                 "/api/sessoes", new { email, senha });
             Assert.Equal(HttpStatusCode.Unauthorized, senhaAntigaLogin.StatusCode);
@@ -101,7 +101,7 @@ public sealed class S44RecuperacaoSenhaPostgresTeste(PainelApiFactory factory) :
         return (conta.Id, email, senha);
     }
 
-    private static async Task<HttpClient> LoginAsync(
+    private static async Task<HttpClient> CriarSessaoAsync(
         WebApplicationFactory<Program> host,
         string email,
         string senha)

@@ -11,7 +11,7 @@ using Solar.Api.Persistencia;
 namespace Solar.Api.Tests;
 
 [Collection(PostgresTestDatabase.CollectionName)]
-public sealed class S44SessaoPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
+public sealed class CicloDeVidaDaSessaoPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
 {
     [Theory]
     [InlineData(PerfisDoPainel.Cliente, null)]

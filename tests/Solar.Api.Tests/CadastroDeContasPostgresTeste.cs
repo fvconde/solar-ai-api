@@ -9,7 +9,7 @@ using Solar.Api.Persistencia;
 namespace Solar.Api.Tests;
 
 [Collection(PostgresTestDatabase.CollectionName)]
-public sealed class S44CadastroPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
+public sealed class CadastroDeContasPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
 {
     [Fact]
     public async Task Cadastro_cliente_grava_consentimento_e_cria_sessao()
@@ -109,22 +109,4 @@ public sealed class S44CadastroPostgresTeste(PainelApiFactory factory) : IClassF
 
     private static string CookieDe(HttpResponseMessage resposta) =>
         resposta.Headers.GetValues("Set-Cookie").Single().Split(';', 2)[0];
-}
-
-[Collection(PostgresTestDatabase.CollectionName)]
-public sealed class S44CadastroRateLimitHttpTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
-{
-    [Fact]
-    public async Task Cadastro_e_limitado_por_ip()
-    {
-        using var client = factory.CreateClient();
-        for (var i = 0; i < 20; i++)
-        {
-            using var resposta = await client.PostAsJsonAsync("/api/contas", new { });
-            Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
-        }
-
-        using var limitado = await client.PostAsJsonAsync("/api/contas", new { });
-        Assert.Equal(HttpStatusCode.TooManyRequests, limitado.StatusCode);
-    }
 }

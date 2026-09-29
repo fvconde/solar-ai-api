@@ -11,13 +11,13 @@ using Solar.Api.Persistencia;
 namespace Solar.Api.Tests;
 
 [Collection(PostgresTestDatabase.CollectionName)]
-public sealed class S44HistoricoConversasPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
+public sealed class HistoricoDeConversasPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
 {
     [Fact]
     public async Task Historico_de_cliente_ordena_por_atualizacao_e_monta_titulo_e_estado_sem_llm()
     {
         var (contaId, email, senha) = await CriarContaAsync(PerfisDoPainel.Cliente, "historico-cliente");
-        using var client = await LoginAsync(email, senha);
+        using var client = await CriarSessaoAsync(email, senha);
         var ids = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
         foreach (var id in ids)
         {
@@ -66,7 +66,7 @@ public sealed class S44HistoricoConversasPostgresTeste(PainelApiFactory factory)
     public async Task Historico_retorna_403_para_perfis_de_painel(string perfil)
     {
         var (_, email, senha) = await CriarContaAsync(perfil, "historico-painel");
-        using var client = await LoginAsync(email, senha);
+        using var client = await CriarSessaoAsync(email, senha);
         using var resposta = await client.GetAsync("/api/conta/conversas");
         Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
     }
@@ -87,7 +87,7 @@ public sealed class S44HistoricoConversasPostgresTeste(PainelApiFactory factory)
         return (conta.Id, email, senha);
     }
 
-    private async Task<HttpClient> LoginAsync(string email, string senha)
+    private async Task<HttpClient> CriarSessaoAsync(string email, string senha)
     {
         var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
         using var resposta = await client.PostAsJsonAsync("/api/sessoes", new { email, senha });

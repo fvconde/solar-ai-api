@@ -11,14 +11,14 @@ using Solar.Api.Persistencia;
 namespace Solar.Api.Tests;
 
 [Collection(PostgresTestDatabase.CollectionName)]
-public sealed class S44ContaPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
+public sealed class GerenciamentoDeContasPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
 {
     [Fact]
     public async Task Conta_permite_edicao_segura_troca_de_email_e_senha_revogando_outras_sessoes()
     {
         var (id, email, senha) = await CriarContaAsync(PerfisDoPainel.Cliente, "cliente-edicao");
-        using var atual = await LoginAsync(email, senha);
-        using var outraSessao = await LoginAsync(email, senha);
+        using var atual = await CriarSessaoAsync(email, senha);
+        using var outraSessao = await CriarSessaoAsync(email, senha);
 
         using var tentativaErrada = await atual.PatchAsJsonAsync("/api/conta", new
         {
@@ -54,7 +54,7 @@ public sealed class S44ContaPostgresTeste(PainelApiFactory factory) : IClassFixt
         using var bloqueioCliente = await atual.PatchAsJsonAsync("/api/conta", new { regioes = new[] { "sul" } });
         Assert.Equal(HttpStatusCode.Forbidden, bloqueioCliente.StatusCode);
 
-        using var terceiraSessao = await LoginAsync(novoEmail, senha);
+        using var terceiraSessao = await CriarSessaoAsync(novoEmail, senha);
         using var trocaSenha = await atual.PostAsJsonAsync("/api/conta/senha", new
         {
             senhaAtual = senha,
@@ -65,7 +65,7 @@ public sealed class S44ContaPostgresTeste(PainelApiFactory factory) : IClassFixt
         Assert.Equal(HttpStatusCode.OK, atualPermanece.StatusCode);
         using var sessaoRevogada = await terceiraSessao.GetAsync("/api/conta");
         Assert.Equal(HttpStatusCode.Unauthorized, sessaoRevogada.StatusCode);
-        using var senhaNova = await LoginAsync(novoEmail, "Nova-senha-44");
+        using var senhaNova = await CriarSessaoAsync(novoEmail, "Nova-senha-44");
         using var senhaNovaValida = await senhaNova.GetAsync("/api/conta");
         using var senhaAntiga = await atual.PostAsJsonAsync("/api/sessoes", new { email = novoEmail, senha });
         Assert.Equal(HttpStatusCode.OK, senhaNovaValida.StatusCode);
@@ -81,7 +81,7 @@ public sealed class S44ContaPostgresTeste(PainelApiFactory factory) : IClassFixt
     public async Task Exclusao_de_cliente_apaga_suas_conversas_e_leads_sem_afetar_conversa_sem_dono()
     {
         var (id, email, senha) = await CriarContaAsync(PerfisDoPainel.Cliente, "cliente-exclusao");
-        using var cliente = await LoginAsync(email, senha);
+        using var cliente = await CriarSessaoAsync(email, senha);
         var conversaDoCliente = Guid.NewGuid();
         var conversaSemDono = Guid.NewGuid();
         using var conversaCriada = await cliente.PostAsJsonAsync(
@@ -136,7 +136,7 @@ public sealed class S44ContaPostgresTeste(PainelApiFactory factory) : IClassFixt
             encaminhamentoId = encaminhamento.Id;
         }
 
-        using var client = await LoginAsync(email, senha);
+        using var client = await CriarSessaoAsync(email, senha);
         using var resposta = await client.SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/api/conta")
         {
             Content = JsonContent.Create(new { email }),
@@ -157,7 +157,7 @@ public sealed class S44ContaPostgresTeste(PainelApiFactory factory) : IClassFixt
     public async Task Supervisor_nao_pode_excluir_a_propria_conta()
     {
         var (id, email, senha) = await CriarContaAsync(PerfisDoPainel.Supervisor, "supervisor-nao-excluir", aprovado: true);
-        using var supervisor = await LoginAsync(email, senha);
+        using var supervisor = await CriarSessaoAsync(email, senha);
         using var resposta = await supervisor.SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/api/conta")
         {
             Content = JsonContent.Create(new { email }),
@@ -191,7 +191,7 @@ public sealed class S44ContaPostgresTeste(PainelApiFactory factory) : IClassFixt
         return (conta.Id, email, senha);
     }
 
-    private async Task<HttpClient> LoginAsync(string email, string senha)
+    private async Task<HttpClient> CriarSessaoAsync(string email, string senha)
     {
         var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
         using var resposta = await client.PostAsJsonAsync("/api/sessoes", new { email, senha });

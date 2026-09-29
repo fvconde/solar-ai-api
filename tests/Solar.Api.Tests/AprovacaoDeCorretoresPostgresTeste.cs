@@ -13,7 +13,7 @@ using Solar.Api.Servicos;
 namespace Solar.Api.Tests;
 
 [Collection(PostgresTestDatabase.CollectionName)]
-public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
+public sealed class AprovacaoDeCorretoresPostgresTeste(PainelApiFactory factory) : IClassFixture<PainelApiFactory>
 {
     [Fact]
     public async Task Listagem_de_pendentes_e_restrita_a_supervisor_e_ordenada()
@@ -30,7 +30,7 @@ public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory
 
         var (_, corretorEmail, corretorSenha, _) = await CriarContaAsync(
             PerfisDoPainel.Corretor, "corretor-listagem-acesso", aprovado: true);
-        using var corretor = await LoginAsync(corretorEmail, corretorSenha);
+        using var corretor = await CriarSessaoAsync(corretorEmail, corretorSenha);
         using var proibido = await corretor.GetAsync("/api/painel/corretores/pendentes");
         Assert.Equal(HttpStatusCode.Forbidden, proibido.StatusCode);
         using var proibidoAprovar = await corretor.PostAsync(
@@ -40,7 +40,7 @@ public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory
         Assert.Equal(HttpStatusCode.Forbidden, proibidoAprovar.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, proibidoRecusar.StatusCode);
 
-        using var supervisor = await LoginAsync(supervisorEmail, supervisorSenha);
+        using var supervisor = await CriarSessaoAsync(supervisorEmail, supervisorSenha);
         using var resposta = await supervisor.GetAsync("/api/painel/corretores/pendentes");
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
         var pendentes = await resposta.Content.ReadFromJsonAsync<IReadOnlyList<CorretorPendente>>();
@@ -71,7 +71,7 @@ public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory
             leadId = conversa.LeadId;
         }
 
-        using var corretor = await LoginAsync(email, senha);
+        using var corretor = await CriarSessaoAsync(email, senha);
         using var fila = await corretor.GetAsync("/api/painel/leads");
         Assert.Equal(HttpStatusCode.OK, fila.StatusCode);
         var itens = await fila.Content.ReadFromJsonAsync<FilaLeadsResponse>();
@@ -89,7 +89,7 @@ public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory
         var (_, email, senha, _) = await CriarContaAsync(
             PerfisDoPainel.Cliente,
             "cliente-fila-leads");
-        using var cliente = await LoginAsync(email, senha);
+        using var cliente = await CriarSessaoAsync(email, senha);
 
         foreach (var rota in new[]
                  {
@@ -112,12 +112,12 @@ public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory
     public async Task Supervisor_aprova_corretor_em_analise_define_data_e_envia_email()
     {
         var emails = new EnviadorCapturado();
-        using var host = HostComEmailCapturado(emails);
+        using var host = CriarAplicacaoComEmailCapturado(emails);
         var (supervisorId, supervisorEmail, supervisorSenha, _) = await CriarContaAsync(
             PerfisDoPainel.Supervisor, "supervisor-aprovar");
         var (corretorId, corretorEmail, _, _) = await CriarContaAsync(
             PerfisDoPainel.Corretor, "aprovar-destino");
-        using var supervisor = await LoginAsync(host, supervisorEmail, supervisorSenha);
+        using var supervisor = await CriarSessaoAsync(host, supervisorEmail, supervisorSenha);
 
         using var aprovado = await supervisor.PostAsync(
             $"/api/painel/corretores/{corretorId:D}/aprovacao", content: null);
@@ -142,13 +142,13 @@ public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory
     public async Task Supervisor_recusa_corretor_apaga_conta_revoga_sessao_e_envia_motivo()
     {
         var emails = new EnviadorCapturado();
-        using var host = HostComEmailCapturado(emails);
+        using var host = CriarAplicacaoComEmailCapturado(emails);
         var (_, supervisorEmail, supervisorSenha, _) = await CriarContaAsync(
             PerfisDoPainel.Supervisor, "supervisor-recusar");
         var (corretorId, corretorEmail, corretorSenha, _) = await CriarContaAsync(
             PerfisDoPainel.Corretor, "recusar-destino");
-        using var corretorSessao = await LoginAsync(host, corretorEmail, corretorSenha);
-        using var supervisor = await LoginAsync(host, supervisorEmail, supervisorSenha);
+        using var corretorSessao = await CriarSessaoAsync(host, corretorEmail, corretorSenha);
+        using var supervisor = await CriarSessaoAsync(host, supervisorEmail, supervisorSenha);
 
         using var recusado = await supervisor.PostAsJsonAsync(
             $"/api/painel/corretores/{corretorId:D}/recusa", new { motivo = "Documentação incompleta" });
@@ -168,7 +168,7 @@ public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory
         Assert.Equal(HttpStatusCode.BadRequest, motivoLongo.StatusCode);
     }
 
-    private WebApplicationFactory<Program> HostComEmailCapturado(EnviadorCapturado emails) =>
+    private WebApplicationFactory<Program> CriarAplicacaoComEmailCapturado(EnviadorCapturado emails) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IEnviadorEmail>();
@@ -196,10 +196,10 @@ public sealed class S44AprovacaoCorretoresPostgresTeste(PainelApiFactory factory
         return (conta.Id, email, senha, criadoEm);
     }
 
-    private async Task<HttpClient> LoginAsync(string email, string senha) =>
-        await LoginAsync(factory, email, senha);
+    private async Task<HttpClient> CriarSessaoAsync(string email, string senha) =>
+        await CriarSessaoAsync(factory, email, senha);
 
-    private static async Task<HttpClient> LoginAsync(
+    private static async Task<HttpClient> CriarSessaoAsync(
         WebApplicationFactory<Program> host,
         string email,
         string senha)
