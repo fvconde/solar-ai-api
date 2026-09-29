@@ -181,5 +181,3 @@ public sealed class SessoesController(
     private static int SegundosRestantes(DateTimeOffset bloqueadoAte, DateTimeOffset agora) =>
         Math.Clamp((int)Math.Ceiling((bloqueadoAte - agora).TotalSeconds), 1, (int)DuracaoBloqueio.TotalSeconds);
 }
-
-public sealed record BloqueadoResponse(string Codigo, int SegundosRestantes);

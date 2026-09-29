@@ -125,3 +125,5 @@ public sealed record ExclusaoConversaResponse(
     DateTimeOffset RemovidoEm,
     string Escopo,
     string Mensagem);
+
+public sealed record ConversaResumo(Guid Id, string Titulo, DateTimeOffset AtualizadaEm, string Estado);
