@@ -1,5 +1,7 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +22,24 @@ const string PoliticaRateLimitPainel = "painel";
 const string PoliticaRateLimitCadastros = "cadastros";
 
 var builder = WebApplication.CreateBuilder(args);
+
+if (string.Equals(
+        Environment.GetEnvironmentVariable("ASPNETCORE_FORWARDEDHEADERS_ENABLED"),
+        "true",
+        StringComparison.OrdinalIgnoreCase)
+    || string.Equals(
+        Environment.GetEnvironmentVariable("ASPNETCORE_FORWARDEDHEADERS_ENABLED"),
+        "1",
+        StringComparison.Ordinal))
+{
+    throw new InvalidOperationException(
+        "ASPNETCORE_FORWARDEDHEADERS_ENABLED nao pode abrir confianca em proxies sem allow-list.");
+}
+
+var confiancaDeProxies = builder.Configuration
+    .GetSection(ConfiancaDeProxies.SecaoConfiguracao)
+    .Get<ConfiancaDeProxies>() ?? new ConfiancaDeProxies();
+builder.Services.Configure<ForwardedHeadersOptions>(confiancaDeProxies.Configurar);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -180,6 +200,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Solar API v1"));
 }
 
+app.UseForwardedHeaders();
 app.UseRouting();
 app.UseCors(PoliticaCorsFront);
 app.UseMiddleware<EmailNormalizadoRateLimitMiddleware>();
