@@ -335,6 +335,7 @@ public sealed class ServicoDeExpurgoPostgresTeste
         var sufixo = Guid.NewGuid().ToString("N");
         var nomeFuncao = $"s39_falha_exclusao_{sufixo}";
         var nomeTrigger = $"s39_trigger_falha_{sufixo}";
+        var nomeSequencia = $"s39_seq_falha_exclusao_{sufixo}";
 
         try
         {
@@ -349,22 +350,52 @@ public sealed class ServicoDeExpurgoPostgresTeste
                     contatoAntigo));
             });
 
+            Assert.Equal(
+                new Contagens(1, 2, 4, 1),
+                await ContarLeadAsync(harness.ConnectionString, leadId));
+
             await ExecutarSqlAsync(
                 harness.ConnectionString,
-                $"CREATE FUNCTION {nomeFuncao}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION '{ExcecaoCanario}'; END; $$;");
+                $"CREATE SEQUENCE {nomeSequencia} START WITH 1;");
+
             await ExecutarSqlAsync(
                 harness.ConnectionString,
-                $"CREATE TRIGGER {nomeTrigger} BEFORE DELETE ON mensagens FOR EACH ROW EXECUTE FUNCTION {nomeFuncao}();");
+                $@"CREATE FUNCTION {nomeFuncao}() RETURNS trigger
+                    LANGUAGE plpgsql AS $s39$
+                    BEGIN
+                        IF OLD.id = TG_ARGV[0]::uuid
+                           AND NOT EXISTS (SELECT 1 FROM conversas WHERE lead_id = OLD.id)
+                           AND NOT EXISTS (SELECT 1 FROM encaminhamentos WHERE lead_id = OLD.id)
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM mensagens AS m
+                               WHERE m.conversa_id IN (TG_ARGV[1]::uuid, TG_ARGV[2]::uuid)
+                           )
+                        THEN
+                            PERFORM nextval('{nomeSequencia}');
+                            RAISE EXCEPTION '{ExcecaoCanario}';
+                        END IF;
+                        RETURN OLD;
+                    END;
+                    $s39$;");
+
+            await ExecutarSqlAsync(
+                harness.ConnectionString,
+                $"CREATE TRIGGER {nomeTrigger} BEFORE DELETE ON leads FOR EACH ROW WHEN (OLD.id = '{leadId:D}'::uuid) EXECUTE FUNCTION {nomeFuncao}('{leadId:D}', '{conversaA.Id:D}', '{conversaB.Id:D}');");
 
             var expurgados = await harness.Servico.ExecutarCicloAsync();
 
             Assert.Equal(0, expurgados);
-            Assert.Equal(new Contagens(1, 2, 4, 1), await ContarLeadAsync(harness.ConnectionString, leadId));
+            // nextval não volta com o rollback e só é chamado após as dependências sumirem.
+            Assert.True(await SequenciaFoiUsadaAsync(harness.ConnectionString, nomeSequencia));
+            Assert.Equal(
+                new Contagens(1, 2, 4, 1),
+                await ContarLeadAsync(harness.ConnectionString, leadId));
             Assert.Contains(harness.Logs.Registros, registro => registro.Nivel == LogLevel.Error);
             Assert.DoesNotContain(
                 harness.Logs.Registros,
                 registro => registro.Nivel == LogLevel.Information &&
-                            registro.Mensagem.Contains("Expurgo por retencao", StringComparison.Ordinal));
+                    registro.Mensagem.Contains("Expurgo por retencao", StringComparison.Ordinal));
             AssertarLogsSemDadosPessoais(harness.Logs, leadId, conversaA.Id, conversaB.Id);
         }
         finally
@@ -373,14 +404,29 @@ public sealed class ServicoDeExpurgoPostgresTeste
             {
                 await ExecutarSqlAsync(
                     harness.ConnectionString,
-                    $"DROP TRIGGER IF EXISTS {nomeTrigger} ON mensagens;");
-                await ExecutarSqlAsync(
-                    harness.ConnectionString,
-                    $"DROP FUNCTION IF EXISTS {nomeFuncao}();");
+                    $"DROP TRIGGER IF EXISTS {nomeTrigger} ON leads;");
             }
             finally
             {
-                await limpeza.LimparAsync();
+                try
+                {
+                    await ExecutarSqlAsync(
+                        harness.ConnectionString,
+                        $"DROP FUNCTION IF EXISTS {nomeFuncao}();");
+                }
+                finally
+                {
+                    try
+                    {
+                        await ExecutarSqlAsync(
+                            harness.ConnectionString,
+                            $"DROP SEQUENCE IF EXISTS {nomeSequencia};");
+                    }
+                    finally
+                    {
+                        await limpeza.LimparAsync();
+                    }
+                }
             }
         }
 
@@ -392,6 +438,10 @@ public sealed class ServicoDeExpurgoPostgresTeste
             harness.ConnectionString,
             "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = @p0)",
             nomeFuncao));
+        Assert.False(await ExisteObjetoDoCatalogoAsync(
+            harness.ConnectionString,
+            "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = @p0 AND relkind = 'S')",
+            nomeSequencia));
     }
 
     [Fact]
@@ -547,6 +597,16 @@ public sealed class ServicoDeExpurgoPostgresTeste
     {
         await using var db = NovoContexto(conexao);
         await db.Database.ExecuteSqlRawAsync(sql);
+    }
+
+    private static async Task<bool> SequenciaFoiUsadaAsync(string conexao, string nomeSequencia)
+    {
+        await using var db = NovoContexto(conexao);
+        var conexaoAberta = db.Database.GetDbConnection();
+        await conexaoAberta.OpenAsync();
+        await using var comando = conexaoAberta.CreateCommand();
+        comando.CommandText = $"SELECT is_called FROM {nomeSequencia}";
+        return (bool)(await comando.ExecuteScalarAsync())!;
     }
 
     private static async Task<bool> ExisteObjetoDoCatalogoAsync(string conexao, string sql, string nome)
