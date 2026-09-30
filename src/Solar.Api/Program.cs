@@ -49,6 +49,7 @@ builder.Services.AddScoped<AgendaRepositorio>();
 builder.Services.AddScoped<GravacaoDoTurno>();
 builder.Services.AddSingleton<TravaDeConversas>();
 builder.Services.AddHostedService<ServicoDeReengajamento>();
+builder.Services.AddHostedService<ServicoDeExpurgo>();
 
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 builder.Services.AddSingleton<IPainelRateLimitStore, PainelRateLimitStore>();
