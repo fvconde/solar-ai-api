@@ -72,6 +72,10 @@ builder.Services.AddHostedService<ServicoDeReengajamento>();
 
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 builder.Services.AddSingleton<IPainelRateLimitStore, PainelRateLimitStore>();
+builder.Services.Configure<OpcoesSmtpEmail>(
+    builder.Configuration.GetSection(OpcoesSmtpEmail.SecaoConfiguracao));
+builder.Services.AddSingleton<IFabricaClienteSmtp, FabricaClienteSmtp>();
+builder.Services.AddSingleton<ITransporteSmtp, TransporteSmtp>();
 builder.Services.AddScoped<IEnviadorEmail, EnviadorEmail>();
 builder.Services.AddSingleton<IPasswordHasher<Corretor>>(_ => PasswordHasherDoCorretor.Criar());
 
