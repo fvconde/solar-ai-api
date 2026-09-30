@@ -175,19 +175,38 @@ builder.Services.AddRateLimiter(opcoes =>
     });
 });
 
+builder.Services.Configure<OpcoesAutenticacaoAgente>(
+    builder.Configuration.GetSection(OpcoesAutenticacaoAgente.SecaoConfiguracao));
+builder.Services.AddHttpClient<IProvedorTokenIdentidadeAgente, ProvedorTokenIdentidadeMetadata>(http =>
+{
+    http.Timeout = TimeSpan.FromSeconds(5);
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    UseProxy = false,
+});
+builder.Services.AddTransient<HandlerAutenticacaoAgente>();
+
 builder.Services.AddHttpClient<AgenteClient>((servicos, http) =>
 {
     var configuracao = servicos.GetRequiredService<IConfiguration>();
     http.BaseAddress = new Uri(configuracao["Agente:BaseUrl"] ?? "http://localhost:8000");
     http.Timeout = TimeSpan.FromSeconds(configuracao.GetValue("Agente:TimeoutSegundos", 30));
-});
+}).RedactLoggedHeaders(new[] { "Authorization" })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    AllowAutoRedirect = false,
+}).AddHttpMessageHandler<HandlerAutenticacaoAgente>();
 
 builder.Services.AddHttpClient<ResumoClient>((servicos, http) =>
 {
     var configuracao = servicos.GetRequiredService<IConfiguration>();
     http.BaseAddress = new Uri(configuracao["Agente:BaseUrl"] ?? "http://localhost:8000");
     http.Timeout = TimeSpan.FromSeconds(configuracao.GetValue("Agente:TimeoutSegundos", 30));
-});
+}).RedactLoggedHeaders(new[] { "Authorization" })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    AllowAutoRedirect = false,
+}).AddHttpMessageHandler<HandlerAutenticacaoAgente>();
 
 var app = builder.Build();
 
