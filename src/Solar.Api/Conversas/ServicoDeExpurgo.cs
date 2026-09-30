@@ -13,6 +13,7 @@ public sealed class ServicoDeExpurgo(
 {
     private const int PrazoPadraoEmMeses = 12;
     private static readonly TimeSpan IntervaloPadrao = TimeSpan.FromDays(1);
+    private static readonly TimeSpan AtrasoInicialPadrao = TimeSpan.FromMinutes(5);
 
     public TimeSpan IntervaloVarredura
     {
@@ -22,6 +23,17 @@ public sealed class ServicoDeExpurgo(
             return intervalo > TimeSpan.Zero
                 ? intervalo
                 : throw new InvalidOperationException("Expurgo:IntervaloVarredura deve ser positivo.");
+        }
+    }
+
+    public TimeSpan AtrasoInicial
+    {
+        get
+        {
+            var atraso = configuracao.GetValue("Expurgo:AtrasoInicial", AtrasoInicialPadrao);
+            return atraso >= TimeSpan.Zero
+                ? atraso
+                : throw new InvalidOperationException("Expurgo:AtrasoInicial não pode ser negativo.");
         }
     }
 
@@ -38,17 +50,24 @@ public sealed class ServicoDeExpurgo(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(IntervaloVarredura);
+        var atrasoInicial = AtrasoInicial;
+        var intervaloVarredura = IntervaloVarredura;
+
+        try
+        {
+            await Task.Delay(atrasoInicial, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        using var timer = new PeriodicTimer(intervaloVarredura);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                if (!await timer.WaitForNextTickAsync(stoppingToken))
-                {
-                    break;
-                }
-
                 await ExecutarCicloAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -58,6 +77,18 @@ public sealed class ServicoDeExpurgo(
             catch
             {
                 logger.LogError("Falha no ciclo de expurgo por prazo de retencao.");
+            }
+
+            try
+            {
+                if (!await timer.WaitForNextTickAsync(stoppingToken))
+                {
+                    break;
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
         }
     }
