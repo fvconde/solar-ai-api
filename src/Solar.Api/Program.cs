@@ -78,6 +78,7 @@ builder.Services.AddSingleton<IFabricaClienteSmtp, FabricaClienteSmtp>();
 builder.Services.AddSingleton<ITransporteSmtp, TransporteSmtp>();
 builder.Services.AddScoped<IEnviadorEmail, EnviadorEmail>();
 builder.Services.AddSingleton<IPasswordHasher<Corretor>>(_ => PasswordHasherDoCorretor.Criar());
+builder.Services.AddScoped<SenhaInicialSupervisor>();
 
 builder.Services.AddAuthentication(options =>
     {
@@ -215,6 +216,10 @@ builder.Services.AddHttpClient<ResumoClient>((servicos, http) =>
 var app = builder.Build();
 
 await MigracaoDoBanco.AplicarAsync(app);
+using (var escopo = app.Services.CreateScope())
+{
+    await escopo.ServiceProvider.GetRequiredService<SenhaInicialSupervisor>().GarantirAsync();
+}
 await AgendaInicial.GarantirAsync(app);
 
 if (app.Environment.IsDevelopment())
