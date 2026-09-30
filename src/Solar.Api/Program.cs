@@ -174,8 +174,11 @@ var app = builder.Build();
 await MigracaoDoBanco.AplicarAsync(app);
 await AgendaInicial.GarantirAsync(app);
 
-app.MapOpenApi();
-app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Solar API v1"));
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Solar API v1"));
+}
 
 app.UseRouting();
 app.UseCors(PoliticaCorsFront);
