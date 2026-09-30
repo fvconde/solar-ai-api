@@ -38,6 +38,22 @@ public sealed class Encaminhamento
 
     public void ReapontarLead(Guid canonicoId) => LeadId = canonicoId;
 
+    public void Desatribuir(DateTimeOffset em)
+    {
+        CorretorId = null;
+        Corretor = null;
+        Status = StatusDoEncaminhamento.Aguardando;
+        Em = em;
+    }
+
+    public void Atribuir(Guid? corretorId, DateTimeOffset em)
+    {
+        CorretorId = corretorId;
+        Corretor = null;
+        Status = corretorId is null ? StatusDoEncaminhamento.Aguardando : StatusDoEncaminhamento.Atribuido;
+        Em = em;
+    }
+
     public void RegistrarResumo(ResumoResponse resumo) => Resumo = resumo;
 
     public static Encaminhamento Novo(

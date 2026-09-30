@@ -25,4 +25,33 @@ public sealed class EnviadorEmail(
 
         return Task.CompletedTask;
     }
+
+    public Task EnviarAprovacaoAsync(
+        Guid contaId,
+        string destinatario,
+        string nome,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ambiente.IsDevelopment())
+        {
+            logger.LogInformation("E-mail enviado para a conta {ContaId}", contaId);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task EnviarRecusaAsync(
+        Guid contaId,
+        string destinatario,
+        string nome,
+        string? motivo,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ambiente.IsDevelopment())
+        {
+            logger.LogInformation("E-mail enviado para a conta {ContaId}", contaId);
+        }
+        return Task.CompletedTask;
+    }
 }

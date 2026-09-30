@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Solar.Api.Agendamentos;
@@ -36,11 +37,20 @@ public class ConversasController(
     [EnableRateLimiting("mensagens")]
     [ProducesResponseType<ConsentimentoResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ConsentimentoResponse>> RegistrarConsentimento(
         Guid id,
         ConsentimentoRequest requisicao,
         CancellationToken cancellationToken)
     {
+        using var _ = await travas.TravarAsync(id, cancellationToken);
+
+        var existente = await conversas.ObterAsync(id, cancellationToken);
+        if (existente is not null && !PodeAcessar(existente))
+        {
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+        }
+
         if (requisicao.VersaoAvisoPrivacidade != AvisoPrivacidade.VersaoAtual)
         {
             return Problem(
@@ -48,13 +58,12 @@ public class ConversasController(
                 title: "versao do aviso de privacidade invalida");
         }
 
-        using var _ = await travas.TravarAsync(id, cancellationToken);
-
         var conversa = await conversas.RegistrarConsentimentoAsync(
             id,
             requisicao.VersaoAvisoPrivacidade,
             DateTimeOffset.UtcNow,
-            cancellationToken);
+            cancellationToken,
+            ContaClienteAutenticada());
 
         return Ok(new ConsentimentoResponse(
             conversa.Id,
@@ -71,6 +80,7 @@ public class ConversasController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status502BadGateway)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status504GatewayTimeout)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<MensagemResponse>> Enviar(
         Guid id,
         NovaMensagemRequest requisicao,
@@ -79,6 +89,10 @@ public class ConversasController(
         using var _ = await travas.TravarAsync(id, cancellationToken);
 
         var conversa = await conversas.ObterParaEscritaAsync(id, cancellationToken);
+        if (conversa is not null && !PodeAcessar(conversa))
+        {
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+        }
 
         if (conversa?.Lead.TemConsentimento != true)
         {
@@ -160,11 +174,6 @@ public class ConversasController(
         ContatoRequest requisicao,
         CancellationToken cancellationToken)
     {
-        if (Contato.Telefone(requisicao.Telefone) is null && Contato.Email(requisicao.Email) is null)
-        {
-            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "informe telefone ou e-mail");
-        }
-
         using var _ = await travas.TravarAsync(id, cancellationToken);
 
         var conversa = await conversas.ObterParaEscritaAsync(id, cancellationToken);
@@ -172,6 +181,16 @@ public class ConversasController(
         if (conversa is null)
         {
             return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+        }
+
+        if (!PodeAcessar(conversa))
+        {
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+        }
+
+        if (Contato.Telefone(requisicao.Telefone) is null && Contato.Email(requisicao.Email) is null)
+        {
+            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "informe telefone ou e-mail");
         }
 
         var leadId = await conversas.RegistrarContatoAsync(
@@ -189,6 +208,11 @@ public class ConversasController(
         var conversa = await conversas.ObterAsync(id, cancellationToken);
 
         if (conversa is null)
+        {
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+        }
+
+        if (!PodeAcessar(conversa))
         {
             return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
         }
@@ -286,4 +310,24 @@ public class ConversasController(
                 Mensagem: "Conversa e suas mensagens foram removidas. O lead e outras conversas permanecem preservados."));
         }
     }
+
+    private Guid? ContaAutenticada()
+    {
+        if (User.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
+
+        var valor = User.FindFirstValue(CorretorAuthenticationDefaults.CorretorIdClaim)
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(valor, out var id) ? id : null;
+    }
+
+    private Guid? ContaClienteAutenticada() =>
+        User.FindFirstValue(CorretorAuthenticationDefaults.PerfilClaim) == PerfisDoPainel.Cliente
+            ? ContaAutenticada()
+            : null;
+
+    private bool PodeAcessar(Conversa conversa) =>
+        conversa.ContaId is null || ContaAutenticada() == conversa.ContaId;
 }

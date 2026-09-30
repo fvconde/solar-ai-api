@@ -39,13 +39,81 @@ public sealed class ConversaRepositorio(SolarDbContext db)
     public Task<Conversa?> ObterParaEscritaAsync(Guid id, CancellationToken cancellationToken) =>
         CarregarAsync(id, rastrear: true, cancellationToken);
 
+    /// <summary>
+    /// Vincula uma conversa ainda sem dono. Se o lead tambem pertencer a
+    /// conversas sem dono ou de outra conta, cria uma copia isolada antes de
+    /// transferir a posse.
+    /// </summary>
+    public async Task VincularContaAsync(
+        Guid conversaId,
+        Guid contaId,
+        DateTimeOffset em,
+        CancellationToken cancellationToken)
+    {
+        var conversa = await ObterParaEscritaAsync(conversaId, cancellationToken);
+        if (conversa is null || conversa.ContaId is not null)
+        {
+            return;
+        }
+
+        await VincularContaAsync(conversa, contaId, em, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task VincularContaAsync(
+        Conversa conversa,
+        Guid contaId,
+        DateTimeOffset em,
+        CancellationToken cancellationToken)
+    {
+        if (conversa.ContaId is not null)
+        {
+            return;
+        }
+
+        var leadCompartilhado = await db.Conversas
+            .AnyAsync(c => c.LeadId == conversa.LeadId
+                && c.Id != conversa.Id
+                && c.ContaId != contaId, cancellationToken);
+
+        if (leadCompartilhado)
+        {
+            var copia = conversa.Lead.Clonar(em);
+            db.Leads.Add(copia);
+            conversa.ReapontarLead(copia);
+
+            var encaminhamentos = await db.Encaminhamentos
+                .Where(e => e.ConversaId == conversa.Id)
+                .ToListAsync(cancellationToken);
+            foreach (var encaminhamento in encaminhamentos)
+            {
+                encaminhamento.ReapontarLead(copia.Id);
+            }
+        }
+
+        conversa.VincularConta(contaId);
+    }
+
     public async Task<Conversa> RegistrarConsentimentoAsync(
         Guid id,
         string versaoAvisoPrivacidade,
         DateTimeOffset em,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? contaId = null)
     {
         var conversa = await ObterOuCriarAsync(id, em, cancellationToken);
+
+        if (contaId is not null && conversa.ContaId is null)
+        {
+            if (db.Entry(conversa).State == EntityState.Added)
+            {
+                conversa.VincularConta(contaId.Value);
+            }
+            else
+            {
+                await VincularContaAsync(conversa, contaId.Value, em, cancellationToken);
+            }
+        }
 
         conversa.Lead.RegistrarConsentimento(versaoAvisoPrivacidade, em);
         await db.SaveChangesAsync(cancellationToken);
@@ -155,7 +223,7 @@ public sealed class ConversaRepositorio(SolarDbContext db)
         DateTimeOffset em,
         CancellationToken cancellationToken)
     {
-        var canonico = await CanonicoAsync(dados, cancellationToken);
+        var canonico = await CanonicoAsync(conversa, dados, cancellationToken);
 
         if (canonico is null || canonico.Id == conversa.LeadId)
         {
@@ -192,13 +260,29 @@ public sealed class ConversaRepositorio(SolarDbContext db)
         return canonico.Id;
     }
 
-    private async Task<Lead?> CanonicoAsync(ContatoRequest dados, CancellationToken cancellationToken)
+    private async Task<Lead?> CanonicoAsync(
+        Conversa conversa,
+        ContatoRequest dados,
+        CancellationToken cancellationToken)
     {
+        var leadsDaMesmaConta = db.Leads.AsQueryable();
+        if (conversa.ContaId is { } contaId)
+        {
+            leadsDaMesmaConta = leadsDaMesmaConta.Where(lead => !db.Conversas.Any(outra =>
+                outra.LeadId == lead.Id && (outra.ContaId == null || outra.ContaId != contaId)));
+        }
+        else
+        {
+            leadsDaMesmaConta = leadsDaMesmaConta.Where(lead => !db.Conversas.Any(outra =>
+                outra.LeadId == lead.Id && outra.ContaId != null));
+        }
+
         var telefone = Contato.Telefone(dados.Telefone);
 
         if (telefone is not null)
         {
-            var porTelefone = await db.Leads.FirstOrDefaultAsync(l => l.Telefone == telefone, cancellationToken);
+            var porTelefone = await leadsDaMesmaConta
+                .FirstOrDefaultAsync(l => l.Telefone == telefone, cancellationToken);
 
             if (porTelefone is not null)
             {
@@ -210,7 +294,7 @@ public sealed class ConversaRepositorio(SolarDbContext db)
 
         return email is null
             ? null
-            : await db.Leads.FirstOrDefaultAsync(l => l.Email == email, cancellationToken);
+            : await leadsDaMesmaConta.FirstOrDefaultAsync(l => l.Email == email, cancellationToken);
     }
 
     /// <summary>

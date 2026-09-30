@@ -115,3 +115,14 @@ public sealed record RecuperacaoSenhaTokenResponse(string Email);
 public sealed record NovaSenhaPainelRequest(string? Token, string? NovaSenha);
 
 public sealed record ErroPainelResponse(string Erro);
+
+public sealed record CorretorPendente(
+    Guid Id,
+    string Nome,
+    string Email,
+    string Telefone,
+    IReadOnlyList<string> Regioes,
+    IReadOnlyList<string> Especialidades,
+    DateTimeOffset CriadoEm);
+
+public sealed record RecusaCorretorRequest(string? Motivo);

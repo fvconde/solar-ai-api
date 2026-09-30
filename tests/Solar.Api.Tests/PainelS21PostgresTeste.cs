@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
@@ -70,7 +71,7 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         Assert.Contains("\"nomeExibicao\"", detalheJson, StringComparison.Ordinal);
         Assert.Contains("\"pedidoResumo\"", detalheJson, StringComparison.Ordinal);
         Assert.Contains("\"leadStatus\"", detalheJson, StringComparison.Ordinal);
-        Assert.Contains("\"vinculoAtivo\"", (await client.GetStringAsync("/api/painel/sessao")), StringComparison.Ordinal);
+        Assert.Contains("\"vinculoAtivo\"", (await client.GetStringAsync("/api/sessao")), StringComparison.Ordinal);
         Assert.Contains($"\"telefone\":\"{cenario.ProprioTelefone}\"", detalheJson, StringComparison.Ordinal);
         Assert.Contains($"\"email\":\"{cenario.ProprioEmail}\"", detalheJson, StringComparison.Ordinal);
         Assert.Contains("\"resumo\":null", detalheJson, StringComparison.Ordinal);
@@ -141,8 +142,8 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         using var client = factory.CreateClient();
         AdicionarSessao(client, cenario.SupervisorSemVinculoToken);
 
-        using var resposta = await client.GetAsync("/api/painel/sessao");
-        var sessao = await resposta.Content.ReadFromJsonAsync<SessaoPainelResponse>();
+        using var resposta = await client.GetAsync("/api/sessao");
+        var sessao = await resposta.Content.ReadFromJsonAsync<SessaoResponse>();
         var json = await resposta.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
@@ -164,10 +165,9 @@ public sealed class PainelS21PostgresTeste : IClassFixture<PainelApiFactory>
         using var client = factory.CreateClient();
 
         using var resposta = await client.GetAsync("/api/painel/leads");
-        var json = await resposta.Content.ReadAsStringAsync();
-
         Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
-        Assert.Equal("{\"erro\":\"sessao_invalida\"}", json);
+        var erro = await resposta.Content.ReadFromJsonAsync<ErroApiResponse>();
+        Assert.Equal("sessao_invalida", erro?.Codigo);
     }
 
     private async Task<Cenario> CriarCenarioAsync()

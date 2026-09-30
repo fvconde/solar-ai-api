@@ -17,6 +17,7 @@ const string PoliticaCorsFront = "front";
 const string PoliticaRateLimitMensagens = "mensagens";
 const string PoliticaRateLimitExclusao = "exclusao";
 const string PoliticaRateLimitPainel = "painel";
+const string PoliticaRateLimitCadastros = "cadastros";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -131,6 +132,20 @@ builder.Services.AddRateLimiter(opcoes =>
 
         return RateLimitPartition.GetFixedWindowLimiter(
             particao,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = limite,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            });
+    });
+
+    opcoes.AddPolicy(PoliticaRateLimitCadastros, httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonimo";
+        var limite = builder.Configuration.GetValue("RateLimiting:CadastrosPorMinuto", 20);
+        return RateLimitPartition.GetFixedWindowLimiter(
+            ip,
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = limite,
