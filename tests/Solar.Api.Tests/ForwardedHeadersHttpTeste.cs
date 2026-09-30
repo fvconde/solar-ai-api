@@ -44,6 +44,23 @@ public sealed class ForwardedHeadersHttpTeste : IClassFixture<ProxyTrustApiFacto
     }
 
     [Fact]
+    public async Task XForwardedFor_e_ignorado_quando_a_allow_list_padrao_esta_vazia()
+    {
+        using var fabricaSemAllowList = new ProxyTrustApiFactory();
+        Environment.SetEnvironmentVariable("ProxyTrust__ForwardLimit", null);
+        Environment.SetEnvironmentVariable("ProxyTrust__KnownProxies__0", null);
+        Environment.SetEnvironmentVariable("ProxyTrust__KnownIPNetworks__0", null);
+        using var clienteSemAllowList = fabricaSemAllowList.CreateClient();
+        using var resposta = await SolicitarAsync(
+            clienteSemAllowList,
+            "203.0.113.91",
+            "198.51.100.91, 192.0.2.91");
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal("203.0.113.91", await resposta.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task XForwardedFor_de_peer_desconhecido_e_ignorado()
     {
         using var resposta = await SolicitarAsync(
@@ -65,12 +82,53 @@ public sealed class ForwardedHeadersHttpTeste : IClassFixture<ProxyTrustApiFacto
         Assert.Equal("203.0.113.99", await resposta.Content.ReadAsStringAsync());
     }
 
+    [Theory]
+    [InlineData("0.0.0.0/0")]
+    [InlineData("::/0")]
+    public async Task Rede_de_proxies_com_prefixo_zero_impede_inicializacao(string rede)
+    {
+        using var fabrica = new ProxyTrustApiFactory();
+        Environment.SetEnvironmentVariable("ProxyTrust__KnownIPNetworks__0", rede);
+        var excecao = await Record.ExceptionAsync(async () =>
+        {
+            using var clienteComRedeInvalida = fabrica.CreateClient();
+            using var resposta = await clienteComRedeInvalida.GetAsync("/_test/proxy-ip");
+        });
+
+        Assert.NotNull(excecao);
+        Assert.Contains("ProxyTrust:KnownIPNetworks", excecao.ToString());
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("9")]
+    [InlineData("-1")]
+    public async Task Limite_de_saltos_invalido_impede_inicializacao(string limite)
+    {
+        using var fabrica = new ProxyTrustApiFactory();
+        Environment.SetEnvironmentVariable("ProxyTrust__ForwardLimit", limite);
+        var excecao = await Record.ExceptionAsync(async () =>
+        {
+            using var clienteComLimiteInvalido = fabrica.CreateClient();
+            using var resposta = await clienteComLimiteInvalido.GetAsync("/_test/proxy-ip");
+        });
+
+        Assert.NotNull(excecao);
+        Assert.Contains("ProxyTrust:ForwardLimit", excecao.ToString());
+    }
+
     private async Task<HttpResponseMessage> SolicitarAsync(string peerImediato, string xForwardedFor)
+        => await SolicitarAsync(cliente, peerImediato, xForwardedFor);
+
+    private static async Task<HttpResponseMessage> SolicitarAsync(
+        HttpClient clienteAlvo,
+        string peerImediato,
+        string xForwardedFor)
     {
         using var requisicao = new HttpRequestMessage(HttpMethod.Get, "/_test/proxy-ip");
         requisicao.Headers.TryAddWithoutValidation("X-Test-Remote-IP", peerImediato);
         requisicao.Headers.TryAddWithoutValidation("X-Forwarded-For", xForwardedFor);
-        return await cliente.SendAsync(requisicao);
+        return await clienteAlvo.SendAsync(requisicao);
     }
 }
 
@@ -85,29 +143,42 @@ public sealed class ProxyAddressProbeController : ControllerBase
 
 public sealed class ProxyTrustApiFactory : WebApplicationFactory<Program>
 {
-    private static readonly string[] VariaveisDeTeste =
+    private static readonly string[] VariaveisFixasDeTeste =
     [
         "ConnectionStrings__Postgres",
-        "ProxyTrust__ForwardLimit",
-        "ProxyTrust__KnownProxies__0",
-        "ProxyTrust__KnownIPNetworks__0",
         "RateLimiting__MensagensPorMinuto",
         "ASPNETCORE_FORWARDEDHEADERS_ENABLED",
     ];
 
-    private readonly Dictionary<string, string?> valoresAnteriores = VariaveisDeTeste
-        .ToDictionary(nome => nome, Environment.GetEnvironmentVariable);
+    private readonly Dictionary<string, string?> valoresAnteriores;
 
     public ProxyTrustApiFactory()
     {
+        var variaveisProxyAnteriores = Environment.GetEnvironmentVariables()
+            .Keys
+            .OfType<string>()
+            .Where(nome => nome.Equals("ProxyTrust", StringComparison.OrdinalIgnoreCase)
+                || nome.StartsWith("ProxyTrust__", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        valoresAnteriores = VariaveisFixasDeTeste
+            .Concat(variaveisProxyAnteriores)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(nome => nome, nome => Environment.GetEnvironmentVariable(nome), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var nome in variaveisProxyAnteriores)
+        {
+            Environment.SetEnvironmentVariable(nome, null);
+        }
+
         Environment.SetEnvironmentVariable(
             "ConnectionStrings__Postgres",
             PostgresTestDatabase.ObterConexaoParaAplicacao());
+        Environment.SetEnvironmentVariable("RateLimiting__MensagensPorMinuto", "1");
+        Environment.SetEnvironmentVariable("ASPNETCORE_FORWARDEDHEADERS_ENABLED", null);
+
         Environment.SetEnvironmentVariable("ProxyTrust__ForwardLimit", "2");
         Environment.SetEnvironmentVariable("ProxyTrust__KnownProxies__0", "192.0.2.10");
         Environment.SetEnvironmentVariable("ProxyTrust__KnownIPNetworks__0", "198.51.100.0/24");
-        Environment.SetEnvironmentVariable("RateLimiting__MensagensPorMinuto", "1");
-        Environment.SetEnvironmentVariable("ASPNETCORE_FORWARDEDHEADERS_ENABLED", null);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -124,6 +195,16 @@ public sealed class ProxyTrustApiFactory : WebApplicationFactory<Program>
     {
         if (disposing)
         {
+            var variaveisProxyAtuais = Environment.GetEnvironmentVariables()
+                .Keys
+                .OfType<string>()
+                .Where(nome => nome.Equals("ProxyTrust", StringComparison.OrdinalIgnoreCase)
+                    || nome.StartsWith("ProxyTrust__", StringComparison.OrdinalIgnoreCase));
+            foreach (var nome in variaveisProxyAtuais)
+            {
+                Environment.SetEnvironmentVariable(nome, null);
+            }
+
             foreach (var (nome, valor) in valoresAnteriores)
             {
                 Environment.SetEnvironmentVariable(nome, valor);

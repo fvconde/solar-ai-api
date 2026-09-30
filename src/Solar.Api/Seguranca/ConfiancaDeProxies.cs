@@ -15,17 +15,18 @@ internal sealed class ConfiancaDeProxies
     private const int QuantidadeMaximaDeProxies = 32;
 
     /// <summary>
-    /// Cadeia esperada: cliente -> Cloud Run solar-front -> nginx -> Cloud Run solar-api -> API.
-    /// Cloud Run não oferece um IP de saída fixo por padrão; por isso a lista base fica vazia.
-    /// Só devem ser configurados os peers observados e validados para o caminho solar-front -> solar-api.
-    /// No deploy, use apenas a seção ProxyTrust: ForwardLimit, KnownProxies e KnownIPNetworks.
-    /// Não inclua ranges compartilhados do Google se o API continuar acessível diretamente: nesse caso,
-    /// o caminho direto e o caminho do nginx podem chegar pelo mesmo proxy de borda. O critério 10 deve
-    /// verificar a cadeia observada e, se necessário, exigir ingress interno ou egress estático exclusivo.
+    /// Cadeia: cliente -> Cloud Run solar-front (nginx e helper local de token) -> Cloud Run solar-api -> API.
+    /// solar-api exige IAM (--no-allow-unauthenticated); somente a service account dedicada do solar-front
+    /// recebe run.invoker. O helper obtem um ID token com audiencia do solar-api e o nginx sobrescreve
+    /// X-Serverless-Authorization com ele. Cloud Run recusa acesso direto sem essa identidade antes de
+    /// a API tratar headers; ranges compartilhados do Google nao substituem autenticacao do solicitante.
+    /// Configure apenas ProxyTrust:ForwardLimit, KnownProxies e KnownIPNetworks. O criterio 10 verifica
+    /// os peers observados; nao invente nem fixe um IP de egress presumido do Cloud Run.
     ///
-    /// O nginx deve determinar o cliente pela parte confiável da cadeia de entrada do Cloud Run, remover
-    /// qualquer prefixo X-Forwarded-For recebido do cliente e encaminhar somente a cadeia normalizada.
-    /// Não encaminhe cegamente $http_x_forwarded_for nem acrescente a ele $proxy_add_x_forwarded_for.
+    /// O nginx normaliza a cadeia recebida do Cloud Run, remove qualquer prefixo X-Forwarded-For
+    /// enviado pelo cliente e define X-Forwarded-For normalizado para a API. Nunca repasse cegamente
+    /// $http_x_forwarded_for nem anexe entrada nao confiavel com $proxy_add_x_forwarded_for. Use um
+    /// subrequest local de autenticacao; o helper renova o token e nunca o devolve ao navegador.
     /// </summary>
     public int ForwardLimit { get; set; } = 1;
     public string[] KnownProxies { get; set; } = [];
@@ -45,7 +46,11 @@ internal sealed class ConfiancaDeProxies
                 $"ProxyTrust aceita no maximo {QuantidadeMaximaDeProxies} proxies ou redes.");
         }
 
-        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+        // Com ambas as listas vazias, o middleware deixa de validar KnownProxies/KnownIPNetworks.
+        // Nesse estado, desative X-Forwarded-For para que nenhum peer arbitrário altere o IP remoto.
+        options.ForwardedHeaders = KnownProxies.Length == 0 && KnownIPNetworks.Length == 0
+            ? ForwardedHeaders.None
+            : ForwardedHeaders.XForwardedFor;
         options.ForwardLimit = ForwardLimit;
 
         // Substitui até os defaults de loopback do ASP.NET. Sem configuração explícita, nenhum
