@@ -9,7 +9,9 @@ namespace Solar.Api.Tests;
 
 public sealed class AutenticacaoAgenteHttpTeste
 {
-    private const string UrlAgente = "https://solar-agente.test/";
+    private const string UrlAgenteSemBarra = "https://solar-agente.test";
+    private const string UrlAgenteComBarra = "https://solar-agente.test/";
+    private const string AudienciaAgente = "https://solar-agente.test";
     private const string TokenDeTeste = "token-falso-1234567890";
 
     [Fact]
@@ -19,11 +21,13 @@ public sealed class AutenticacaoAgenteHttpTeste
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task AgenteClient_aplica_a_opcao_de_autenticacao(bool ativa)
+    [InlineData(UrlAgenteSemBarra, false)]
+    [InlineData(UrlAgenteSemBarra, true)]
+    [InlineData(UrlAgenteComBarra, false)]
+    [InlineData(UrlAgenteComBarra, true)]
+    public async Task AgenteClient_aplica_a_opcao_de_autenticacao(string urlBase, bool ativa)
     {
-        var resultado = await ExecutarAsync(usarResumo: false, ativa);
+        var resultado = await ExecutarAsync(usarResumo: false, ativa: ativa, urlAgente: urlBase);
 
         Assert.Null(resultado.Erro);
         Assert.NotNull(resultado.RequisicaoAgente);
@@ -32,11 +36,13 @@ public sealed class AutenticacaoAgenteHttpTeste
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ResumoClient_aplica_a_opcao_de_autenticacao(bool ativa)
+    [InlineData(UrlAgenteSemBarra, false)]
+    [InlineData(UrlAgenteSemBarra, true)]
+    [InlineData(UrlAgenteComBarra, false)]
+    [InlineData(UrlAgenteComBarra, true)]
+    public async Task ResumoClient_aplica_a_opcao_de_autenticacao(string urlBase, bool ativa)
     {
-        var resultado = await ExecutarAsync(usarResumo: true, ativa);
+        var resultado = await ExecutarAsync(usarResumo: true, ativa: ativa, urlAgente: urlBase);
 
         Assert.Null(resultado.Erro);
         Assert.NotNull(resultado.RequisicaoAgente);
@@ -66,6 +72,7 @@ public sealed class AutenticacaoAgenteHttpTeste
     private static async Task<ResultadoChamada> ExecutarAsync(
         bool usarResumo,
         bool ativa,
+        string urlAgente = UrlAgenteSemBarra,
         HttpStatusCode statusMetadata = HttpStatusCode.OK,
         string corpoMetadata = TokenDeTeste)
     {
@@ -106,7 +113,7 @@ public sealed class AutenticacaoAgenteHttpTeste
 
         using var httpAgente = new HttpClient(autenticacao)
         {
-            BaseAddress = new Uri(UrlAgente),
+            BaseAddress = new Uri(urlAgente),
             Timeout = TimeSpan.FromSeconds(2),
         };
 
@@ -148,7 +155,8 @@ public sealed class AutenticacaoAgenteHttpTeste
             "/computeMetadata/v1/instance/service-accounts/default/identity",
             resultado.RequisicaoMetadata.Caminho);
         Assert.Equal("Google", resultado.RequisicaoMetadata.MetadataFlavor);
-        Assert.Equal(UrlAgente, resultado.RequisicaoMetadata.Audiencia);
+        Assert.Equal(AudienciaAgente, resultado.RequisicaoMetadata.Audiencia);
+        Assert.Equal(new Uri(AudienciaAgente).Host, resultado.RequisicaoAgente!.Host);
         Assert.Equal("Bearer", resultado.RequisicaoAgente!.EsquemaAutenticacao);
         Assert.Equal(TokenDeTeste, resultado.RequisicaoAgente.ParametroAutenticacao);
     }

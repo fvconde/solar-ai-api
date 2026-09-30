@@ -24,7 +24,7 @@ public sealed class HandlerAutenticacaoAgente(
             throw new HttpRequestException("A autenticacao do agente exige uma URL HTTPS absoluta.");
         }
 
-        var audiencia = $"{destino.GetLeftPart(UriPartial.Authority)}/";
+        var audiencia = destino.GetLeftPart(UriPartial.Authority);
         var token = await provedor.ObterTokenAsync(audiencia, cancellationToken);
         requisicao.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
