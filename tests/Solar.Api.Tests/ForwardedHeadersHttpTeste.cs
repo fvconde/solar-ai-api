@@ -1,4 +1,5 @@
 using System.Net;
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -7,6 +8,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Solar.Api.Tests;
 
@@ -117,6 +119,172 @@ public sealed class ForwardedHeadersHttpTeste : IClassFixture<ProxyTrustApiFacto
         Assert.Contains("ProxyTrust:ForwardLimit", excecao.ToString());
     }
 
+    [Fact]
+    public async Task Header_proprio_de_peer_conhecido_define_IP_e_ignora_XFF()
+    {
+        using var fabrica = CriarFabricaComHeaderProprio();
+        using var clienteProprio = fabrica.CreateClient();
+        using var resposta = await SolicitarHeaderProprioAsync(
+            clienteProprio, "192.0.2.10", "203.0.113.70", "198.51.100.70");
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal("203.0.113.70", await resposta.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task XFF_sozinho_e_ignorado_quando_configurado_header_proprio()
+    {
+        using var fabrica = CriarFabricaComHeaderProprio();
+        using var clienteProprio = fabrica.CreateClient();
+        using var resposta = await SolicitarAsync(clienteProprio, "192.0.2.10", "203.0.113.71");
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal("192.0.2.10", await resposta.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Header_proprio_de_peer_desconhecido_e_ignorado()
+    {
+        using var fabrica = CriarFabricaComHeaderProprio();
+        using var clienteProprio = fabrica.CreateClient();
+        using var resposta = await SolicitarHeaderProprioAsync(
+            clienteProprio, "203.0.113.72", "203.0.113.73");
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal("203.0.113.72", await resposta.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData("SENTINELA_HEADER_INVALIDO")]
+    [InlineData("203.0.113.74, 203.0.113.75")]
+    [InlineData(" 203.0.113.74")]
+    [InlineData("203.0.113.74 ")]
+    [InlineData("203.0.113.74:8080")]
+    [InlineData("")]
+    public async Task Header_proprio_invalido_ou_com_lista_nao_define_IP(string valor)
+    {
+        using var fabrica = CriarFabricaComHeaderProprio();
+        using var clienteProprio = fabrica.CreateClient();
+        using var resposta = await SolicitarHeaderProprioAsync(clienteProprio, "192.0.2.10", valor);
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal("192.0.2.10", await resposta.Content.ReadAsStringAsync());
+        Assert.Equal("False", resposta.Headers.GetValues("X-Test-Header-Proprio-Presente").Single());
+        Assert.DoesNotContain(fabrica.MensagensDeLog, mensagem => mensagem.Contains("SENTINELA_HEADER_INVALIDO"));
+    }
+
+    [Fact]
+    public async Task Header_proprio_repetido_em_duas_linhas_e_removido_sem_mudar_peer()
+    {
+        using var fabrica = CriarFabricaComHeaderProprio();
+        using var clienteProprio = fabrica.CreateClient();
+        using var resposta = await SolicitarHeaderProprioAsync(clienteProprio, "192.0.2.10", null,
+            linhas: ["203.0.113.78", "203.0.113.79"]);
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal("192.0.2.10", await resposta.Content.ReadAsStringAsync());
+        Assert.Equal("False", resposta.Headers.GetValues("X-Test-Header-Proprio-Presente").Single());
+    }
+
+    [Fact]
+    public async Task Header_proprio_com_IPv6_valido_define_IP_normalizado()
+    {
+        using var fabrica = CriarFabricaComHeaderProprio();
+        using var clienteProprio = fabrica.CreateClient();
+        using var resposta = await SolicitarHeaderProprioAsync(
+            clienteProprio, "192.0.2.10", "2001:0db8:0:0::80");
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal("2001:db8::80", await resposta.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Header_proprio_ausente_mantem_peer_mesmo_com_XFF()
+    {
+        using var fabrica = CriarFabricaComHeaderProprio();
+        using var clienteProprio = fabrica.CreateClient();
+        using var resposta = await SolicitarHeaderProprioAsync(
+            clienteProprio, "192.0.2.10", null, "203.0.113.81");
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal("192.0.2.10", await resposta.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Modo_XFF_padrao_preserva_cadeia_e_nao_instala_filtro_do_header_proprio()
+    {
+        using var resposta = await SolicitarHeaderProprioAsync(cliente, "192.0.2.10",
+            "SENTINELA_HEADER_INVALIDO", "203.0.113.82, 198.51.100.82");
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        Assert.Equal("203.0.113.82", await resposta.Content.ReadAsStringAsync());
+        Assert.Equal("True", resposta.Headers.GetValues("X-Test-Header-Proprio-Presente").Single());
+    }
+
+    [Theory]
+    [InlineData("X-Real-IP")]
+    [InlineData("X-Solar-Client-IP,X-Forwarded-For")]
+    [InlineData(" X-Solar-Client-IP")]
+    [InlineData("x-solar-client-ip")]
+    public async Task Header_fora_da_allow_list_recusa_boot(string header)
+    {
+        using var fabrica = new ProxyTrustApiFactory();
+        Environment.SetEnvironmentVariable("ProxyTrust__ForwardedForHeaderName", header);
+        var excecao = await Record.ExceptionAsync(async () =>
+        {
+            using var clienteInvalido = fabrica.CreateClient();
+            using var resposta = await clienteInvalido.GetAsync("/_test/proxy-ip");
+        });
+
+        Assert.NotNull(excecao);
+        Assert.Contains("ProxyTrust:ForwardedForHeaderName", excecao.ToString());
+    }
+
+    [Fact]
+    public async Task Rate_limit_separa_clientes_pelo_header_proprio()
+    {
+        using var fabrica = CriarFabricaComHeaderProprio();
+        using var clienteProprio = fabrica.CreateClient();
+        using var primeiro = await SolicitarHeaderProprioAsync(clienteProprio, "192.0.2.10", "203.0.113.76");
+        using var repeticao = await SolicitarHeaderProprioAsync(clienteProprio, "192.0.2.10", "203.0.113.76");
+        using var segundo = await SolicitarHeaderProprioAsync(clienteProprio, "192.0.2.10", "203.0.113.77");
+
+        Assert.Equal(HttpStatusCode.OK, primeiro.StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, repeticao.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, segundo.StatusCode);
+    }
+
+    private static ProxyTrustApiFactory CriarFabricaComHeaderProprio()
+    {
+        var fabrica = new ProxyTrustApiFactory();
+        Environment.SetEnvironmentVariable("ProxyTrust__ForwardedForHeaderName", "X-Solar-Client-IP");
+        Environment.SetEnvironmentVariable("ProxyTrust__ForwardLimit", "1");
+        Environment.SetEnvironmentVariable("ProxyTrust__KnownIPNetworks__0", null);
+        return fabrica;
+    }
+
+    private static async Task<HttpResponseMessage> SolicitarHeaderProprioAsync(
+        HttpClient clienteAlvo, string peerImediato, string? valor, string? xForwardedFor = null,
+        string[]? linhas = null)
+    {
+        using var requisicao = new HttpRequestMessage(HttpMethod.Get, "/_test/proxy-ip");
+        requisicao.Headers.TryAddWithoutValidation("X-Test-Remote-IP", peerImediato);
+        if (linhas is not null)
+        {
+            requisicao.Headers.TryAddWithoutValidation("X-Solar-Client-IP", linhas);
+        }
+        else if (valor is not null)
+        {
+            requisicao.Headers.TryAddWithoutValidation("X-Solar-Client-IP", valor);
+        }
+        if (xForwardedFor is not null)
+        {
+            requisicao.Headers.TryAddWithoutValidation("X-Forwarded-For", xForwardedFor);
+        }
+
+        return await clienteAlvo.SendAsync(requisicao);
+    }
+
     private async Task<HttpResponseMessage> SolicitarAsync(string peerImediato, string xForwardedFor)
         => await SolicitarAsync(cliente, peerImediato, xForwardedFor);
 
@@ -138,7 +306,11 @@ public sealed class ProxyAddressProbeController : ControllerBase
 {
     [HttpGet]
     [EnableRateLimiting("mensagens")]
-    public IActionResult Get() => Content(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "");
+    public IActionResult Get()
+    {
+        Response.Headers["X-Test-Header-Proprio-Presente"] = Request.Headers.ContainsKey("X-Solar-Client-IP").ToString();
+        return Content(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "");
+    }
 }
 
 public sealed class ProxyTrustApiFactory : WebApplicationFactory<Program>
@@ -151,6 +323,7 @@ public sealed class ProxyTrustApiFactory : WebApplicationFactory<Program>
     ];
 
     private readonly Dictionary<string, string?> valoresAnteriores;
+    public ConcurrentQueue<string> MensagensDeLog { get; } = new();
 
     public ProxyTrustApiFactory()
     {
@@ -184,11 +357,27 @@ public sealed class ProxyTrustApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(Environments.Development);
+        builder.ConfigureLogging(logging => logging.AddProvider(new CapturaDeLogs(MensagensDeLog)));
         builder.ConfigureTestServices(services =>
         {
             services.AddControllers().AddApplicationPart(typeof(ProxyAddressProbeController).Assembly);
             services.AddTransient<IStartupFilter, ProxyRemoteAddressStartupFilter>();
         });
+    }
+
+    private sealed class CapturaDeLogs(ConcurrentQueue<string> mensagens) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new LoggerDeTeste(mensagens);
+        public void Dispose() { }
+
+        private sealed class LoggerDeTeste(ConcurrentQueue<string> mensagens) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+                Exception? exception, Func<TState, Exception?, string> formatter) =>
+                mensagens.Enqueue(formatter(state, exception));
+        }
     }
 
     protected override void Dispose(bool disposing)

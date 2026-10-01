@@ -39,7 +39,7 @@ if (string.Equals(
 var confiancaDeProxies = builder.Configuration
     .GetSection(ConfiancaDeProxies.SecaoConfiguracao)
     .Get<ConfiancaDeProxies>() ?? new ConfiancaDeProxies();
-builder.Services.Configure<ForwardedHeadersOptions>(confiancaDeProxies.Configurar);
+confiancaDeProxies.Registrar(builder.Services);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
