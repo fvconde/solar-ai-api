@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Solar.Api.Contracts;
 using Solar.Api.Controllers;
@@ -12,6 +14,14 @@ namespace Solar.Api.Tests;
 
 public class ConsentimentoTeste
 {
+    private sealed class AmbienteDevelopment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+        public string ApplicationName { get; set; } = typeof(ConsentimentoTeste).Assembly.GetName().Name!;
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
     private static SolarDbContext CriarBanco()
     {
         var options = new DbContextOptionsBuilder<SolarDbContext>()
@@ -29,7 +39,7 @@ public class ConsentimentoTeste
         new TravaDeConversas(),
         null!,
         new ConfigurationBuilder().Build(),
-        null!,
+        new AmbienteDevelopment(),
         NullLogger<ConversasController>.Instance)
     {
         ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }

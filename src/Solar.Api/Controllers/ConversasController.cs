@@ -26,6 +26,8 @@ public class ConversasController(
     IHostEnvironment environment,
     ILogger<ConversasController> logger) : ControllerBase
 {
+    public const string NomeCookieChaveExclusao = "solar.chave_exclusao";
+
     private const int JanelaPadrao = 20;
 
     private int Janela => Math.Clamp(
@@ -58,12 +60,30 @@ public class ConversasController(
                 title: "versao do aviso de privacidade invalida");
         }
 
+        var chave = existente is null && User.Identity?.IsAuthenticated != true
+            ? TokenSeguro.Criar()
+            : null;
+        var hash = chave is null ? null : TokenSeguro.Sha256(chave);
         var conversa = await conversas.RegistrarConsentimentoAsync(
             id,
             requisicao.VersaoAvisoPrivacidade,
             DateTimeOffset.UtcNow,
             cancellationToken,
-            ContaClienteAutenticada());
+            ContaClienteAutenticada(),
+            hash);
+
+        if (chave is not null && hash is not null
+            && conversa.ContaId is null
+            && TokenSeguro.HashesIguais(conversa.ChaveExclusaoHash, hash))
+        {
+            Response.Cookies.Append(NomeCookieChaveExclusao, chave, new CookieOptions
+            {
+                HttpOnly = true,
+                SameSite = SameSiteMode.Strict,
+                Secure = !environment.IsDevelopment(),
+                Path = $"/conversas/{conversa.Id:D}",
+            });
+        }
 
         return Ok(new ConsentimentoResponse(
             conversa.Id,

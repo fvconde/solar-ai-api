@@ -28,6 +28,8 @@ public sealed class Conversa
 
     public Guid? ContaId { get; private set; }
 
+    public byte[]? ChaveExclusaoHash { get; private set; }
+
     public Lead Lead { get; private set; } = null!;
 
     public DateTimeOffset CriadaEm { get; private set; }
@@ -65,6 +67,8 @@ public sealed class Conversa
     }
 
     public void VincularConta(Guid contaId) => ContaId = contaId;
+
+    public void DefinirChaveExclusaoHash(byte[] hash) => ChaveExclusaoHash = hash;
 
     /// <summary>
     /// Grava as duas falas do turno e funde o perfil. So roda depois de o agente

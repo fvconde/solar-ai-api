@@ -99,7 +99,8 @@ public sealed class ConversaRepositorio(SolarDbContext db)
         string versaoAvisoPrivacidade,
         DateTimeOffset em,
         CancellationToken cancellationToken,
-        Guid? contaId = null)
+        Guid? contaId = null,
+        byte[]? chaveExclusaoHash = null)
     {
         var conversa = await ObterOuCriarAsync(id, em, cancellationToken);
 
@@ -113,6 +114,13 @@ public sealed class ConversaRepositorio(SolarDbContext db)
             {
                 await VincularContaAsync(conversa, contaId.Value, em, cancellationToken);
             }
+        }
+
+        if (db.Entry(conversa).State == EntityState.Added
+            && conversa.ContaId is null
+            && chaveExclusaoHash is not null)
+        {
+            conversa.DefinirChaveExclusaoHash(chaveExclusaoHash);
         }
 
         conversa.Lead.RegistrarConsentimento(versaoAvisoPrivacidade, em);
