@@ -1,5 +1,7 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +22,24 @@ const string PoliticaRateLimitPainel = "painel";
 const string PoliticaRateLimitCadastros = "cadastros";
 
 var builder = WebApplication.CreateBuilder(args);
+
+if (string.Equals(
+        Environment.GetEnvironmentVariable("ASPNETCORE_FORWARDEDHEADERS_ENABLED"),
+        "true",
+        StringComparison.OrdinalIgnoreCase)
+    || string.Equals(
+        Environment.GetEnvironmentVariable("ASPNETCORE_FORWARDEDHEADERS_ENABLED"),
+        "1",
+        StringComparison.Ordinal))
+{
+    throw new InvalidOperationException(
+        "ASPNETCORE_FORWARDEDHEADERS_ENABLED nao pode abrir confianca em proxies sem allow-list.");
+}
+
+var confiancaDeProxies = builder.Configuration
+    .GetSection(ConfiancaDeProxies.SecaoConfiguracao)
+    .Get<ConfiancaDeProxies>() ?? new ConfiancaDeProxies();
+confiancaDeProxies.Registrar(builder.Services);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -53,8 +73,13 @@ builder.Services.AddHostedService<ServicoDeExpurgo>();
 
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 builder.Services.AddSingleton<IPainelRateLimitStore, PainelRateLimitStore>();
+builder.Services.Configure<OpcoesSmtpEmail>(
+    builder.Configuration.GetSection(OpcoesSmtpEmail.SecaoConfiguracao));
+builder.Services.AddSingleton<IFabricaClienteSmtp, FabricaClienteSmtp>();
+builder.Services.AddSingleton<ITransporteSmtp, TransporteSmtp>();
 builder.Services.AddScoped<IEnviadorEmail, EnviadorEmail>();
 builder.Services.AddSingleton<IPasswordHasher<Corretor>>(_ => PasswordHasherDoCorretor.Criar());
+builder.Services.AddScoped<SenhaInicialSupervisor>();
 
 builder.Services.AddAuthentication(options =>
     {
@@ -156,28 +181,55 @@ builder.Services.AddRateLimiter(opcoes =>
     });
 });
 
+builder.Services.Configure<OpcoesAutenticacaoAgente>(
+    builder.Configuration.GetSection(OpcoesAutenticacaoAgente.SecaoConfiguracao));
+builder.Services.AddHttpClient<IProvedorTokenIdentidadeAgente, ProvedorTokenIdentidadeMetadata>(http =>
+{
+    http.Timeout = TimeSpan.FromSeconds(5);
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    UseProxy = false,
+});
+builder.Services.AddTransient<HandlerAutenticacaoAgente>();
+
 builder.Services.AddHttpClient<AgenteClient>((servicos, http) =>
 {
     var configuracao = servicos.GetRequiredService<IConfiguration>();
     http.BaseAddress = new Uri(configuracao["Agente:BaseUrl"] ?? "http://localhost:8000");
     http.Timeout = TimeSpan.FromSeconds(configuracao.GetValue("Agente:TimeoutSegundos", 30));
-});
+}).RedactLoggedHeaders(new[] { "Authorization" })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    AllowAutoRedirect = false,
+}).AddHttpMessageHandler<HandlerAutenticacaoAgente>();
 
 builder.Services.AddHttpClient<ResumoClient>((servicos, http) =>
 {
     var configuracao = servicos.GetRequiredService<IConfiguration>();
     http.BaseAddress = new Uri(configuracao["Agente:BaseUrl"] ?? "http://localhost:8000");
     http.Timeout = TimeSpan.FromSeconds(configuracao.GetValue("Agente:TimeoutSegundos", 30));
-});
+}).RedactLoggedHeaders(new[] { "Authorization" })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    AllowAutoRedirect = false,
+}).AddHttpMessageHandler<HandlerAutenticacaoAgente>();
 
 var app = builder.Build();
 
 await MigracaoDoBanco.AplicarAsync(app);
+using (var escopo = app.Services.CreateScope())
+{
+    await escopo.ServiceProvider.GetRequiredService<SenhaInicialSupervisor>().GarantirAsync();
+}
 await AgendaInicial.GarantirAsync(app);
 
-app.MapOpenApi();
-app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Solar API v1"));
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "Solar API v1"));
+}
 
+app.UseForwardedHeaders();
 app.UseRouting();
 app.UseCors(PoliticaCorsFront);
 app.UseMiddleware<EmailNormalizadoRateLimitMiddleware>();
