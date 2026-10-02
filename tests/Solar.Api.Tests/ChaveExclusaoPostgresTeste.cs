@@ -231,9 +231,7 @@ public sealed class ChaveExclusaoPostgresTeste(PainelApiFactory factory) : IClas
     private static SetCookieHeaderValue CookieDaChave(HttpResponseMessage resposta)
     {
         Assert.True(resposta.Headers.TryGetValues("Set-Cookie", out var cookies));
-        var valores = cookies!.ToArray();
-        Assert.Equal(1, valores.Length);
-        var cookie = SetCookieHeaderValue.Parse(valores[0]);
+        var cookie = SetCookieHeaderValue.Parse(Assert.Single(cookies!));
         Assert.Equal(ConversasController.NomeCookieChaveExclusao, cookie.Name.ToString());
         Assert.True(cookie.Value.HasValue);
         return cookie;
