@@ -552,20 +552,14 @@ public class PainelController : ControllerBase
             .Where(e => leadIds.Contains(e.LeadId))
             .ToListAsync(cancellationToken);
 
-        var encaminhamentoPorLead = encaminhamentos
-            .GroupBy(e => e.LeadId)
-            .ToDictionary(
-                grupo => grupo.Key,
-                grupo => grupo
-                    .OrderByDescending(e => e.Em)
-                    .ThenByDescending(e => e.Id)
-                    .First());
+        var encaminhamentoPorLead = RegrasDaFilaDeLeads.SelecionarUltimoEncaminhamentoPorLead(
+            encaminhamentos);
 
         var autorizados = leadsList
             .Where(lead =>
             {
                 encaminhamentoPorLead.TryGetValue(lead.Id, out var encaminhamento);
-                return PertenceAoFiltro(
+                return RegrasDaFilaDeLeads.PertenceAoFiltro(
                     lead,
                     encaminhamento,
                     filtroEfetivo,
@@ -832,24 +826,6 @@ public class PainelController : ControllerBase
         return corretor.VinculoAtivo
             ? (new[] { "minha_fila", "sem_corretor", "visao_geral" }, "minha_fila")
             : (new[] { "sem_corretor", "visao_geral" }, "sem_corretor");
-    }
-
-    private static bool PertenceAoFiltro(
-        Lead lead,
-        Encaminhamento? encaminhamento,
-        string filtro,
-        Guid? corretorId)
-    {
-        return filtro switch
-        {
-            "meus_leads" or "minha_fila" =>
-                corretorId is not null && encaminhamento?.CorretorId == corretorId,
-            "sem_corretor" =>
-                (lead.Status == StatusDoLead.Novo && encaminhamento is null) ||
-                encaminhamento?.CorretorId is null,
-            "visao_geral" => true,
-            _ => false,
-        };
     }
 
     private static string ReferenciaDo(Guid id) =>
