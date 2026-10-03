@@ -60,7 +60,8 @@ public class ConversasController(
                 title: "versao do aviso de privacidade invalida");
         }
 
-        var chave = existente is null && User.Identity?.IsAuthenticated != true
+        var contaId = ContaClienteAutenticada();
+        var chave = existente is null && contaId is null
             ? TokenSeguro.Criar()
             : null;
         var hash = chave is null ? null : TokenSeguro.Sha256(chave);
@@ -69,7 +70,7 @@ public class ConversasController(
             requisicao.VersaoAvisoPrivacidade,
             DateTimeOffset.UtcNow,
             cancellationToken,
-            ContaClienteAutenticada(),
+            contaId,
             hash);
 
         if (chave is not null && hash is not null

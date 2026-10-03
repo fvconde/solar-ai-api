@@ -147,6 +147,57 @@ public sealed class ChaveExclusaoPostgresTeste(PainelApiFactory factory) : IClas
         Assert.NotNull(persistida.Lead.ConsentimentoEm);
     }
 
+    [Fact]
+    public async Task Corretor_autenticado_cria_conversa_sem_dono_com_chave_e_exclui_por_posse_da_chave()
+    {
+        using var corretor = await ClienteComContaAsync(PerfisDoPainel.Corretor);
+        var id = Guid.NewGuid();
+        using var nascimento = await ConsentirAsync(corretor, id);
+        Assert.Equal(HttpStatusCode.OK, nascimento.StatusCode);
+        var cookie = Assert.Single(nascimento.Headers.GetValues("Set-Cookie")
+                .Select(valor => SetCookieHeaderValue.Parse(valor)),
+            valor => valor.Name.Equals(ConversasController.NomeCookieChaveExclusao, StringComparison.Ordinal));
+        Assert.True(cookie.HttpOnly);
+        Assert.Equal("Strict", cookie.SameSite.ToString());
+        Assert.False(cookie.Secure);
+        Assert.Equal($"/conversas/{id:D}", cookie.Path.ToString());
+        var chave = cookie.Value.ToString();
+        Assert.Equal(TokenSeguro.TamanhoEmBytes, Decodificar(chave).Length);
+        Guid leadId;
+        await using (var db = await PostgresTestDatabase.CriarContextoAsync())
+        {
+            var conversa = await db.Conversas.SingleAsync(c => c.Id == id);
+            Assert.Null(conversa.ContaId);
+            Assert.True(TokenSeguro.HashesIguais(conversa.ChaveExclusaoHash, TokenSeguro.Sha256(chave)));
+            leadId = conversa.LeadId;
+        }
+
+        using var repeticao = await ConsentirAsync(corretor, id);
+        Assert.Equal(HttpStatusCode.OK, repeticao.StatusCode);
+        AssertSemCookie(repeticao);
+        await using (var db = await PostgresTestDatabase.CriarContextoAsync())
+        {
+            var conversa = await db.Conversas.SingleAsync(c => c.Id == id);
+            Assert.Null(conversa.ContaId);
+            Assert.True(TokenSeguro.HashesIguais(conversa.ChaveExclusaoHash, TokenSeguro.Sha256(chave)));
+        }
+        using var semChave = await corretor.DeleteAsync($"/conversas/{id:D}/titular");
+        Assert.Equal(HttpStatusCode.Forbidden, semChave.StatusCode);
+        AssertSemCookie(semChave);
+
+        using var possuidora = CriarCliente(factory);
+        possuidora.DefaultRequestHeaders.Add("Cookie", $"{ConversasController.NomeCookieChaveExclusao}={chave}");
+        using var excluida = await possuidora.DeleteAsync($"/conversas/{id:D}/titular");
+        Assert.Equal(HttpStatusCode.OK, excluida.StatusCode);
+        var resultado = await excluida.Content.ReadFromJsonAsync<ExclusaoTitularResponse>();
+        Assert.NotNull(resultado);
+        Assert.True(resultado.LeadExcluido);
+        Assert.Equal("lead_e_vinculos", resultado.Escopo);
+        await using var verificar = await PostgresTestDatabase.CriarContextoAsync();
+        Assert.False(await verificar.Conversas.AnyAsync(c => c.Id == id));
+        Assert.False(await verificar.Leads.AnyAsync(l => l.Id == leadId));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -194,7 +245,7 @@ public sealed class ChaveExclusaoPostgresTeste(PainelApiFactory factory) : IClas
         Assert.Equal(quantidadeLeads, await db.Leads.CountAsync());
     }
 
-    private async Task<HttpClient> ClienteComContaAsync()
+    private async Task<HttpClient> ClienteComContaAsync(string perfil = PerfisDoPainel.Cliente)
     {
         const string senha = "Senha-segura-38";
         var email = $"chave-exclusao-{Guid.NewGuid():N}@tests.solar.local";
@@ -203,7 +254,7 @@ public sealed class ChaveExclusaoPostgresTeste(PainelApiFactory factory) : IClas
             var db = escopo.ServiceProvider.GetRequiredService<SolarDbContext>();
             var hasher = escopo.ServiceProvider.GetRequiredService<IPasswordHasher<Corretor>>();
             var conta = Corretor.NovaConta("Cliente T1", email, email, "11999998888", "placeholder",
-                PerfisDoPainel.Cliente, [], [], AvisoPrivacidade.VersaoAtual, DateTimeOffset.UtcNow);
+                perfil, [], [], AvisoPrivacidade.VersaoAtual, DateTimeOffset.UtcNow);
             conta.DefinirSenhaHash(hasher.HashPassword(conta, senha));
             db.Corretores.Add(conta);
             await db.SaveChangesAsync();
@@ -212,6 +263,9 @@ public sealed class ChaveExclusaoPostgresTeste(PainelApiFactory factory) : IClas
         var cliente = CriarCliente(factory);
         using var sessao = await cliente.PostAsJsonAsync("/api/sessoes", new { email, senha });
         Assert.Equal(HttpStatusCode.OK, sessao.StatusCode);
+        var respostaSessao = await sessao.Content.ReadFromJsonAsync<SessaoResponse>();
+        Assert.NotNull(respostaSessao);
+        Assert.Equal(perfil, respostaSessao.Perfil);
         cliente.DefaultRequestHeaders.Add("Cookie", sessao.Headers.GetValues("Set-Cookie").Single().Split(';', 2)[0]);
         return cliente;
     }
