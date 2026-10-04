@@ -347,8 +347,7 @@ public sealed class ConversaRepositorio(SolarDbContext db)
                 || !atuais.Select(c => c.Id).ToHashSet().SetEquals(conversasInspecionadas))
                 return new(EstadoExclusaoTitular.Conflito);
 
-            var excluirLead = atuais.Count == 1
-                || (prova.ContaId is { } dona && atuais.All(c => c.ContaId == dona));
+            var excluirLead = atuais.Count == 1;
             DateTimeOffset removidoEm;
             if (excluirLead)
             {

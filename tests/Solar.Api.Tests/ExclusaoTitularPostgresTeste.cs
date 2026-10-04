@@ -116,27 +116,41 @@ public sealed partial class ExclusaoTitularPostgresTeste(PainelApiFactory factor
     }
 
     [Fact]
-    public async Task Conversas_do_mesmo_lead_e_da_mesma_conta_autenticada_autorizam_cascata()
+    public async Task Conversas_do_mesmo_lead_e_da_mesma_conta_autenticada_limitam_exclusao_a_conversa_provada()
     {
         using var app = CriarAplicacao();
         var dona = await CriarContaAsync(app);
         using var cliente = await EntrarAsync(app, dona);
         var a = await CriarComContaAsync(cliente);
         var b = await CriarComContaAsync(cliente);
-        await SemearRegistrosAsync(a.Id, b.Id);
         var telefone = TelefoneUnico();
         var lead = await RegistrarContatoAsync(cliente, a.Id, telefone, null);
         Assert.Equal(lead, await RegistrarContatoAsync(cliente, b.Id, telefone, null));
+        await SemearRegistrosAsync(a.Id, b.Id);
+
+        long slotId;
+        await using (var db = await PostgresTestDatabase.CriarContextoAsync())
+        {
+            var slot = Slot.Novo(dona.Id, DateTimeOffset.UtcNow.AddDays(1), DateTimeOffset.UtcNow.AddDays(1).AddHours(1));
+            db.Slots.Add(slot);
+            db.Entry(slot).Property(s => s.LeadId).CurrentValue = lead;
+            await db.SaveChangesAsync();
+            slotId = slot.Id;
+        }
+
+        var antesB = await FotografarAsync(b.Id);
 
         using var resposta = await cliente.DeleteAsync($"/conversas/{a.Id:D}/titular");
 
-        await AssertEscopoAsync(resposta, "lead_e_vinculos", true, b);
+        var body = await AssertEscopoAsync(resposta, "apenas_conversa", false, b);
+        Assert.Contains("A conversa e suas mensagens foram apagadas definitivamente.", body);
         await AssertConversaAusenteAsync(a.Id);
-        await AssertConversaAusenteAsync(b.Id);
-        await AssertLeadAusenteAsync(lead);
-        await using var db = await PostgresTestDatabase.CriarContextoAsync();
-        Assert.True(await db.Corretores.AnyAsync(c => c.Id == dona.Id));
-        Assert.True(await db.Sessoes.AnyAsync(s => s.CorretorId == dona.Id));
+        Assert.Equal(antesB, await FotografarAsync(b.Id));
+        await using var dbVerificar = await PostgresTestDatabase.CriarContextoAsync();
+        Assert.True(await dbVerificar.Corretores.AnyAsync(c => c.Id == dona.Id));
+        Assert.True(await dbVerificar.Sessoes.AnyAsync(s => s.CorretorId == dona.Id));
+        var slotSalvo = await dbVerificar.Slots.SingleAsync(s => s.Id == slotId);
+        Assert.Equal(lead, slotSalvo.LeadId);
     }
 
     [Theory]
@@ -159,7 +173,7 @@ public sealed partial class ExclusaoTitularPostgresTeste(PainelApiFactory factor
         using var resposta = await cliente.DeleteAsync($"/conversas/{a.Id:D}/titular");
 
         var body = await AssertEscopoAsync(resposta, "apenas_conversa", false, b);
-        Assert.Contains("canal humano", body);
+        Assert.DoesNotContain("canal humano", body);
         Assert.False(email is not null && body.Contains(email, StringComparison.Ordinal));
         Assert.False(telefone is not null && body.Contains(telefone, StringComparison.Ordinal));
         AssertCookieRemovido(resposta, a.Id, false);
@@ -374,6 +388,7 @@ public sealed partial class ExclusaoTitularPostgresTeste(PainelApiFactory factor
         Assert.NotNull(dto);
         Assert.Equal(escopo, dto.Escopo);
         Assert.Equal(leadExcluido, dto.LeadExcluido);
+        Assert.Equal("A conversa e suas mensagens foram apagadas definitivamente.", dto.Mensagem);
         var body = await resposta.Content.ReadAsStringAsync();
         using var json = JsonDocument.Parse(body);
         Assert.Equal(new[] { "leadExcluido", "removidoEm", "escopo", "mensagem" },

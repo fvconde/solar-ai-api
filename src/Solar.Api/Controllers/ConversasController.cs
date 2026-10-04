@@ -373,9 +373,7 @@ public class ConversasController(
             resultado.LeadExcluido,
             resultado.RemovidoEm!.Value,
             resultado.LeadExcluido ? "lead_e_vinculos" : "apenas_conversa",
-            resultado.LeadExcluido
-                ? "Lead, conversas, mensagens e encaminhamentos vinculados foram eliminados definitivamente."
-                : "Esta conversa, suas mensagens e encaminhamentos foram eliminados definitivamente. Para a eliminacao dos dados restantes, utilize o canal humano indicado em /privacidade."));
+            "A conversa e suas mensagens foram apagadas definitivamente."));
     }
 
     private Guid? ContaAutenticada()
