@@ -591,6 +591,51 @@ public class PainelController : ControllerBase
         return Ok(new FilaLeadsResponse(itens, itens.Count));
     }
 
+    [HttpGet("metricas")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType<MetricasPainelResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<PerfilInsuficientePainelResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<MetricasPainelResponse>> ObterMetricasAsync(
+        CancellationToken cancellationToken,
+        [FromQuery] int dias = 30)
+    {
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
+        {
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Cliente)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse("perfil_insuficiente", PerfisDoPainel.Corretor));
+        }
+
+        if (dias is < 1 or > 365)
+        {
+            return BadRequest(new ErroPainelResponse("periodo_invalido"));
+        }
+
+        var agora = timeProvider.GetUtcNow();
+        var periodo = new PeriodoMetricasPainel(dias, agora.AddDays(-dias), agora);
+        var prazoRetencaoMeses = configuracao.GetValue("Expurgo:PrazoRetencaoMeses", 12);
+        if (prazoRetencaoMeses <= 0)
+        {
+            throw new InvalidOperationException("Expurgo:PrazoRetencaoMeses deve ser positivo.");
+        }
+
+        var supervisor = sessao.Corretor.Perfil == PerfisDoPainel.Supervisor;
+        if (!supervisor && sessao.Corretor.StatusCorretor == StatusDoCorretor.EmAnalise)
+        {
+            return Ok(ConsultaDeMetricasDoPainel.Vazia(periodo, prazoRetencaoMeses, supervisor));
+        }
+
+        return Ok(await ConsultaDeMetricasDoPainel.ObterAsync(
+            db, sessao.CorretorId, supervisor, periodo, prazoRetencaoMeses, cancellationToken));
+    }
+
     [HttpGet("leads/{id:guid}")]
     [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
     [ProducesResponseType<DetalheLeadPainelResponse>(StatusCodes.Status200OK)]
