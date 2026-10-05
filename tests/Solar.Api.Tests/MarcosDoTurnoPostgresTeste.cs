@@ -118,6 +118,21 @@ public sealed class MarcosDoTurnoPostgresTeste
             var antesDoTurno = await db.Conversas.AsNoTracking().SingleAsync(c => c.Id == conversaId);
             Assert.Null(antesDoTurno.EssenciaisEm);
 
+            var primeiroTurnoIncompleto = new TurnoResponse(
+                Resposta: "Continuando a conversa.",
+                Intencao: Intencoes.Compra,
+                CamposExtraidos: new CamposExtraidos(),
+                ProximaAcao: ProximasAcoes.ContinuarConversa,
+                ImoveisSugeridos: [],
+                SlotEscolhido: null,
+                EssenciaisCompletos: false);
+
+            repo.AplicarTurno(conversa, "Ainda pesquisando", primeiroTurnoIncompleto, T1);
+            await gravacao.SalvarAsync(conversa, null, [], null, T1, default);
+
+            var recarregada1 = await db.Conversas.AsNoTracking().SingleAsync(c => c.Id == conversaId);
+            Assert.Null(recarregada1.EssenciaisEm);
+
             var turnoCompletos = new TurnoResponse(
                 Resposta: "Perfil completo confirmado.",
                 Intencao: Intencoes.Compra,
@@ -127,11 +142,11 @@ public sealed class MarcosDoTurnoPostgresTeste
                 SlotEscolhido: null,
                 EssenciaisCompletos: true);
 
-            repo.AplicarTurno(conversa, "Confirmo os dados", turnoCompletos, T1);
-            await gravacao.SalvarAsync(conversa, null, [], null, T1, default);
+            repo.AplicarTurno(conversa, "Confirmo os dados", turnoCompletos, T2);
+            await gravacao.SalvarAsync(conversa, null, [], null, T2, default);
 
-            var recarregada1 = await db.Conversas.AsNoTracking().SingleAsync(c => c.Id == conversaId);
-            Assert.Equal(T1, recarregada1.EssenciaisEm);
+            var recarregada2 = await db.Conversas.AsNoTracking().SingleAsync(c => c.Id == conversaId);
+            Assert.Equal(T2, recarregada2.EssenciaisEm);
 
             var turnoIncompletos = new TurnoResponse(
                 Resposta: "Continuando a conversa.",
@@ -142,11 +157,11 @@ public sealed class MarcosDoTurnoPostgresTeste
                 SlotEscolhido: null,
                 EssenciaisCompletos: false);
 
-            repo.AplicarTurno(conversa, "Tudo bem", turnoIncompletos, T2);
-            await gravacao.SalvarAsync(conversa, null, [], null, T2, default);
+            repo.AplicarTurno(conversa, "Tudo bem", turnoIncompletos, T3);
+            await gravacao.SalvarAsync(conversa, null, [], null, T3, default);
 
-            var recarregada2 = await db.Conversas.AsNoTracking().SingleAsync(c => c.Id == conversaId);
-            Assert.Equal(T1, recarregada2.EssenciaisEm);
+            var recarregada3 = await db.Conversas.AsNoTracking().SingleAsync(c => c.Id == conversaId);
+            Assert.Equal(T2, recarregada3.EssenciaisEm);
         }
         finally
         {
@@ -229,12 +244,11 @@ public sealed class MarcosDoTurnoPostgresTeste
         var agenda = new AgendaRepositorio(db);
         var gravacao = new GravacaoDoTurno(db, agenda);
 
-        var corretor = await db.Corretores.AsNoTracking().FirstAsync(c => c.VinculoAtivo);
         var conversaId = Guid.NewGuid();
         var conversa = Conversa.Nova(conversaId, Canais.Web, T0);
         db.Conversas.Add(conversa);
 
-        var encaminhamentoExistente = Encaminhamento.Novo(conversa.Id, conversa.LeadId, corretor.Id, corretor.Especialidades[0], T0);
+        var encaminhamentoExistente = Encaminhamento.Novo(conversa.Id, conversa.LeadId, null, Especialidades.Moradia, T0);
         db.Encaminhamentos.Add(encaminhamentoExistente);
         await db.SaveChangesAsync();
 
@@ -261,7 +275,7 @@ public sealed class MarcosDoTurnoPostgresTeste
             var encaminhamentos = await db.Encaminhamentos.AsNoTracking().Where(e => e.ConversaId == conversaId).ToListAsync();
             var unico = Assert.Single(encaminhamentos);
             Assert.Equal(encaminhamentoExistente.Id, unico.Id);
-            Assert.Equal(corretor.Id, unico.CorretorId);
+            Assert.Null(unico.CorretorId);
             Assert.Equal(T0, unico.Em);
         }
         finally
