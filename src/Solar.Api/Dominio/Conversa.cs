@@ -40,6 +40,16 @@ public sealed class Conversa
 
     public string? Desfecho { get; private set; }
 
+    public DateTimeOffset? IntencaoEm { get; private set; }
+
+    public DateTimeOffset? EssenciaisEm { get; private set; }
+
+    public DateTimeOffset? EncaminhadaEm { get; private set; }
+
+    public DateTimeOffset? CorretorAtribuidoEm { get; private set; }
+
+    public DateTimeOffset? PrimeiroReengajamentoEm { get; private set; }
+
     public IReadOnlyList<Mensagem> Mensagens => _mensagens;
 
     public static Conversa Nova(Guid id, string canal, DateTimeOffset em)

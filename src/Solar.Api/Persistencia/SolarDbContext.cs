@@ -23,6 +23,8 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
 
     public DbSet<Slot> Slots => Set<Slot>();
 
+    public DbSet<RegistroMetricas> RegistroMetricas => Set<RegistroMetricas>();
+
     protected override void OnModelCreating(ModelBuilder modelo)
     {
         modelo.Entity<Lead>(lead =>
@@ -173,6 +175,11 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             conversa.Property(c => c.TentativasReengajamento).IsRequired().HasDefaultValue(0);
             conversa.Property(c => c.Desfecho).HasMaxLength(30);
             conversa.Property(c => c.ChaveExclusaoHash).HasColumnType("bytea");
+            conversa.Property(c => c.IntencaoEm).HasColumnType("timestamp with time zone");
+            conversa.Property(c => c.EssenciaisEm).HasColumnType("timestamp with time zone");
+            conversa.Property(c => c.EncaminhadaEm).HasColumnType("timestamp with time zone");
+            conversa.Property(c => c.CorretorAtribuidoEm).HasColumnType("timestamp with time zone");
+            conversa.Property(c => c.PrimeiroReengajamentoEm).HasColumnType("timestamp with time zone");
 
             conversa.HasOne<Corretor>()
                 .WithMany()
@@ -214,6 +221,14 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             // do GET -- filtram por conversa e ordenam por id. O indice composto
             // atende as duas de uma vez.
             mensagem.HasIndex(m => new { m.ConversaId, m.Id });
+        });
+
+        modelo.Entity<RegistroMetricas>(registro =>
+        {
+            registro.ToTable("registro_metricas", t => t.HasCheckConstraint("ck_registro_metricas_id", "id = 1"));
+            registro.HasKey(r => r.Id);
+            registro.Property(r => r.Id).ValueGeneratedNever();
+            registro.Property(r => r.HistoricoDesde).HasColumnType("timestamp with time zone").IsRequired();
         });
 
         AplicarSnakeCase(modelo);
