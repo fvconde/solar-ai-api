@@ -1,0 +1,129 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: solar-api-producao
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build e Testes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: solar_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restaurar dependências
+        run: dotnet restore Solar.sln
+
+      - name: Compilar solução
+        run: dotnet build Solar.sln --no-restore --configuration Release
+
+      - name: Executar testes
+        env:
+          ConnectionStrings__PostgresTest: Host=localhost;Port=5432;Database=solar_test;Username=postgres;Password=postgres
+        run: dotnet test Solar.sln --no-build --configuration Release
+
+  deploy:
+    name: Publicação no Cloud Run
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_ARTIFACT_REGISTRY: ${{ vars.GCP_ARTIFACT_REGISTRY }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      COMMIT_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Validar variáveis de ambiente e SHA
+        run: |
+          if [ -z "$GCP_PROJECT_ID" ]; then
+            echo "Erro: variavel GCP_PROJECT_ID nao configurada" >&2
+            exit 1
+          fi
+          if [ -z "$GCP_REGION" ]; then
+            echo "Erro: variavel GCP_REGION nao configurada" >&2
+            exit 1
+          fi
+          if [ -z "$GCP_ARTIFACT_REGISTRY" ]; then
+            echo "Erro: variavel GCP_ARTIFACT_REGISTRY nao configurada" >&2
+            exit 1
+          fi
+          if [ -z "$GCP_WORKLOAD_IDENTITY_PROVIDER" ]; then
+            echo "Erro: variavel GCP_WORKLOAD_IDENTITY_PROVIDER nao configurada" >&2
+            exit 1
+          fi
+          if [ -z "$GCP_DEPLOY_SERVICE_ACCOUNT" ]; then
+            echo "Erro: variavel GCP_DEPLOY_SERVICE_ACCOUNT nao configurada" >&2
+            exit 1
+          fi
+          if ! echo "$COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Erro: COMMIT_SHA invalido: $COMMIT_SHA" >&2
+            exit 1
+          fi
+
+      - name: Construir imagem Docker
+        run: |
+          IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REGISTRY}/solar-api:${COMMIT_SHA}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
+          docker build --platform linux/amd64 -t "$IMAGE_URI" .
+
+      - name: Autenticar no Google Cloud via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Configurar autenticação Docker
+        run: |
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Enviar imagem para o Artifact Registry
+        run: |
+          docker push "$IMAGE_URI"
+
+      - name: Publicar serviço no Cloud Run
+        run: |
+          gcloud run deploy solar-api \
+            --image "$IMAGE_URI" \
+            --update-env-vars "SOLAR_VERSION=${COMMIT_SHA}" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --quiet
