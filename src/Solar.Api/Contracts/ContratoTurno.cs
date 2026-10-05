@@ -123,4 +123,3 @@ public sealed record TurnoResponse(
     IReadOnlyList<ImovelSugerido> ImoveisSugeridos,
     long? SlotEscolhido,
     bool EssenciaisCompletos = false);
-
