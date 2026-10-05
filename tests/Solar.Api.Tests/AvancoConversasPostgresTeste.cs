@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Solar.Api.Contracts;
@@ -147,7 +146,6 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
 
         var tStart = Agora.AddDays(-10);
 
-        // Conversa A: intencao, encaminhamento, corretor, horario (duas mensagens de agendamento), SEM essenciais
         var conversaA = Conversa.Nova(Guid.NewGuid(), Canais.Web, tStart);
         conversaA.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(), tStart);
         typeof(Conversa).GetProperty(nameof(Conversa.IntencaoEm))!.SetValue(conversaA, tStart.AddHours(1));
@@ -162,13 +160,11 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
         msgConfirmada2.RegistrarAgendamento(EstadosDoAgendamento.Confirmado, null);
         db.Mensagens.AddRange(msgConfirmada1, msgConfirmada2);
 
-        // Conversa B: apenas essenciais (com intencao indefinida), sem encaminhamento
         var conversaB = Conversa.Nova(Guid.NewGuid(), Canais.Web, tStart);
         typeof(Conversa).GetProperty(nameof(Conversa.EssenciaisEm))!.SetValue(conversaB, tStart.AddHours(1));
         db.Conversas.Add(conversaB);
         db.Mensagens.Add(Mensagem.DoLead(conversaB.Id, "Ola B", tStart));
 
-        // Conversa C: intencao e encaminhamento antes de preencher essenciais posteriormente
         var conversaC = Conversa.Nova(Guid.NewGuid(), Canais.Web, tStart);
         conversaC.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(), tStart);
         typeof(Conversa).GetProperty(nameof(Conversa.IntencaoEm))!.SetValue(conversaC, tStart.AddHours(1));
@@ -209,18 +205,21 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
         }
 
         Corretor supervisor;
+        Corretor corretor;
+        Guid conversaAntigaId;
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
             supervisor = NovaConta("Supervisor S45", PerfisDoPainel.Supervisor, aprovado: true);
-            var corretor = NovaConta("Corretor S45", PerfisDoPainel.Corretor, aprovado: true);
+            corretor = NovaConta("Corretor S45", PerfisDoPainel.Corretor, aprovado: true);
             db.Corretores.AddRange(supervisor, corretor);
 
-            // Conversa 1: antes do corte (1 ms antes)
             var t1 = corte.AddMilliseconds(-1);
             var conversa1 = Conversa.Nova(Guid.NewGuid(), Canais.Web, t1);
-            conversa1.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(), t1);
+            conversaAntigaId = conversa1.Id;
+            conversa1.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(Score: 80), t1);
+            conversa1.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, t1);
             typeof(Conversa).GetProperty(nameof(Conversa.IntencaoEm))!.SetValue(conversa1, t1);
             typeof(Conversa).GetProperty(nameof(Conversa.EssenciaisEm))!.SetValue(conversa1, t1);
             typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(conversa1, t1);
@@ -231,11 +230,12 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
             var msgConf1 = Mensagem.DaLia(conversa1.Id, "Conf 1", ProximasAcoes.ContinuarConversa, t1, []);
             msgConf1.RegistrarAgendamento(EstadosDoAgendamento.Confirmado, null);
             db.Mensagens.Add(msgConf1);
+            db.Encaminhamentos.Add(Encaminhamento.Novo(conversa1.Id, conversa1.LeadId, corretor.Id, Especialidades.Moradia, t1));
 
-            // Conversa 2: instante exato do corte
             var t2 = corte;
             var conversa2 = Conversa.Nova(Guid.NewGuid(), Canais.Web, t2);
-            conversa2.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(), t2);
+            conversa2.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(Score: 80), t2);
+            conversa2.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, t2);
             typeof(Conversa).GetProperty(nameof(Conversa.IntencaoEm))!.SetValue(conversa2, t2);
             typeof(Conversa).GetProperty(nameof(Conversa.EssenciaisEm))!.SetValue(conversa2, t2);
             typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(conversa2, t2);
@@ -246,11 +246,12 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
             var msgConf2 = Mensagem.DaLia(conversa2.Id, "Conf 2", ProximasAcoes.ContinuarConversa, t2, []);
             msgConf2.RegistrarAgendamento(EstadosDoAgendamento.Confirmado, null);
             db.Mensagens.Add(msgConf2);
+            db.Encaminhamentos.Add(Encaminhamento.Novo(conversa2.Id, conversa2.LeadId, corretor.Id, Especialidades.Moradia, t2));
 
-            // Conversa 3: 1 ms depois do corte
             var t3 = corte.AddMilliseconds(1);
             var conversa3 = Conversa.Nova(Guid.NewGuid(), Canais.Web, t3);
-            conversa3.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(), t3);
+            conversa3.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(Score: 80), t3);
+            conversa3.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, t3);
             typeof(Conversa).GetProperty(nameof(Conversa.IntencaoEm))!.SetValue(conversa3, t3);
             typeof(Conversa).GetProperty(nameof(Conversa.EssenciaisEm))!.SetValue(conversa3, t3);
             typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(conversa3, t3);
@@ -260,13 +261,23 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
             var msgConf3 = Mensagem.DaLia(conversa3.Id, "Conf 3", ProximasAcoes.ContinuarConversa, t3, []);
             msgConf3.RegistrarAgendamento(EstadosDoAgendamento.Confirmado, null);
             db.Mensagens.Add(msgConf3);
+            db.Encaminhamentos.Add(Encaminhamento.Novo(conversa3.Id, conversa3.LeadId, corretor.Id, Especialidades.Moradia, t3));
 
-            // Conversa 4: sem mensagem do lead (apenas saudacao da Lia)
             var conversa4 = Conversa.Nova(Guid.NewGuid(), Canais.Web, corte);
             db.Conversas.Add(conversa4);
             db.Mensagens.Add(Mensagem.DaLia(conversa4.Id, "Saudacao isolada", ProximasAcoes.ContinuarConversa, corte, []));
 
             await db.SaveChangesAsync();
+        }
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
+            var conversaAntigaPersistida = await db.Conversas.Include(c => c.Lead).AsNoTracking().SingleAsync(c => c.Id == conversaAntigaId);
+            Assert.Equal(80, conversaAntigaPersistida.Lead.Score);
+            Assert.True(conversaAntigaPersistida.Lead.TemConsentimento);
+            var totalEncaminhamentos = await db.Encaminhamentos.AsNoTracking().Where(e => e.CorretorId == corretor.Id).CountAsync();
+            Assert.Equal(3, totalEncaminhamentos);
         }
 
         try
@@ -277,6 +288,14 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
             Assert.Equal(corte, metricas.Periodo.HistoricoDesde);
             Assert.Equal(3, metricas.ConversasIniciadas);
             Assert.Equal(2, metricas.HorariosConfirmados);
+            Assert.Equal(3, metricas.LeadsPorIntencao.Compra);
+            Assert.Equal(3, metricas.Extras.Score.Quente);
+            Assert.Equal(4, metricas.Extras.Privacidade.Leads);
+            Assert.Equal(3, metricas.Extras.Privacidade.ComConsentimento);
+
+            var atribuicaoCorretor = Assert.Single(metricas.Equipe!.AtribuidasPorCorretor);
+            Assert.Equal(corretor.Id, atribuicaoCorretor.Corretor.Id);
+            Assert.Equal(3, atribuicaoCorretor.Conversas);
 
             var avanco = metricas.Avanco.ToDictionary(a => a.Etapa);
             Assert.Equal(2, avanco["iniciadas"].Conversas);
@@ -285,8 +304,6 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
             Assert.Equal(2, avanco["encaminhamento"].Conversas);
             Assert.Equal(2, avanco["corretor"].Conversas);
             Assert.Equal(2, avanco["horario"].Conversas);
-
-            Assert.Equal(3, metricas.LeadsPorIntencao.Compra);
         }
         finally
         {
@@ -332,16 +349,26 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
             await db.SaveChangesAsync();
         }
 
+        var avancoEsperado = new[]
+        {
+            new AvancoMetricasPainel("iniciadas", 1, null),
+            new AvancoMetricasPainel("intencao", 1, null),
+            new AvancoMetricasPainel("essenciais", 1, null),
+            new AvancoMetricasPainel("encaminhamento", 1, 0),
+            new AvancoMetricasPainel("corretor", 1, null),
+            new AvancoMetricasPainel("horario", 0, null)
+        };
+
         var supervisorToken = await CriarSessaoAsync(fixture.Factory.Services, supervisor);
         var metricasAntes = await ObterMetricasAsync(supervisorToken);
 
-        Assert.Equal(1, metricasAntes.Avanco.Single(a => a.Etapa == "corretor").Conversas);
+        Assert.Equal(avancoEsperado, metricasAntes.Avanco);
         var itemAntes = Assert.Single(metricasAntes.Equipe!.AtribuidasPorCorretor);
+        Assert.Equal(corretorA.Id, itemAntes.Corretor.Id);
         Assert.Equal(corretorA.Nome, itemAntes.Corretor.Nome);
         Assert.Equal(1, itemAntes.Conversas);
         Assert.Equal(0, metricasAntes.Equipe.AguardandoCorretor);
 
-        // Redistribui para B
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
@@ -358,13 +385,13 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
 
         var metricasDepois = await ObterMetricasAsync(supervisorToken);
 
-        Assert.Equal(1, metricasDepois.Avanco.Single(a => a.Etapa == "corretor").Conversas);
+        Assert.Equal(avancoEsperado, metricasDepois.Avanco);
         var itemDepois = Assert.Single(metricasDepois.Equipe!.AtribuidasPorCorretor);
+        Assert.Equal(corretorB.Id, itemDepois.Corretor.Id);
         Assert.Equal(corretorB.Nome, itemDepois.Corretor.Nome);
         Assert.Equal(1, itemDepois.Conversas);
         Assert.Equal(0, metricasDepois.Equipe.AguardandoCorretor);
 
-        // Desatribui sem substituto (desativa B e redistribui sem outros corretores ativos)
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
@@ -378,7 +405,7 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
 
         var metricasDesatribuida = await ObterMetricasAsync(supervisorToken);
 
-        Assert.Equal(1, metricasDesatribuida.Avanco.Single(a => a.Etapa == "corretor").Conversas);
+        Assert.Equal(avancoEsperado, metricasDesatribuida.Avanco);
         Assert.Empty(metricasDesatribuida.Equipe!.AtribuidasPorCorretor);
         Assert.Equal(1, metricasDesatribuida.Equipe.AguardandoCorretor);
     }
@@ -404,7 +431,6 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
             pendente = NovaConta("Corretor Pendente", PerfisDoPainel.Corretor, aprovado: false);
             db.Corretores.AddRange(supervisor, corretor1, corretor2, pendente);
 
-            // Conversa 1 -> Corretor 1
             var conversa1 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tStart);
             db.Conversas.Add(conversa1);
             db.Mensagens.Add(Mensagem.DoLead(conversa1.Id, "Ola 1", tStart));
@@ -413,7 +439,6 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
             db.Mensagens.Add(conf1);
             db.Encaminhamentos.Add(Encaminhamento.Novo(conversa1.Id, conversa1.LeadId, corretor1.Id, Especialidades.Moradia, tStart));
 
-            // Conversa 2 -> Corretor 2
             var conversa2 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tStart);
             db.Conversas.Add(conversa2);
             db.Mensagens.Add(Mensagem.DoLead(conversa2.Id, "Ola 2", tStart));
@@ -422,7 +447,6 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
             db.Mensagens.Add(conf2);
             db.Encaminhamentos.Add(Encaminhamento.Novo(conversa2.Id, conversa2.LeadId, corretor2.Id, Especialidades.Moradia, tStart));
 
-            // Conversa 3 -> Pendente
             var conversa3 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tStart);
             db.Conversas.Add(conversa3);
             db.Mensagens.Add(Mensagem.DoLead(conversa3.Id, "Ola 3", tStart));
@@ -551,13 +575,21 @@ public sealed class AvancoConversasPostgresTeste(MetricasPainelPostgresFixture f
         }
 
         var supervisorToken = await CriarSessaoAsync(fixture.Factory.Services, supervisor);
-        var metricas = await ObterMetricasAsync(supervisorToken);
+        using var client = Cliente(supervisorToken);
+        using var resposta = await client.GetAsync("/api/painel/metricas?dias=30");
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        var jsonBruto = await resposta.Content.ReadAsStringAsync();
 
-        var json = JsonSerializer.Serialize(metricas);
+        Assert.DoesNotContain(nomeCanario, jsonBruto, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(telefoneCanario, jsonBruto, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(emailCanario, jsonBruto, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(textoCanario, jsonBruto, StringComparison.OrdinalIgnoreCase);
 
-        Assert.DoesNotContain(nomeCanario, json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(telefoneCanario, json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(emailCanario, json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(textoCanario, json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"avanco\":", jsonBruto, StringComparison.Ordinal);
+        Assert.Contains("\"historicoDesde\":", jsonBruto, StringComparison.Ordinal);
+        Assert.Contains("\"tempoMedianoMin\":", jsonBruto, StringComparison.Ordinal);
+        Assert.Contains("\"tempoMedianoDiario\":", jsonBruto, StringComparison.Ordinal);
+        Assert.Contains("\"followUp\":", jsonBruto, StringComparison.Ordinal);
+        Assert.Contains("\"janelaDias\":", jsonBruto, StringComparison.Ordinal);
     }
 }
