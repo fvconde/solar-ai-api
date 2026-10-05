@@ -159,23 +159,35 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
             var corretor = NovaConta("Corretor S45", PerfisDoPainel.Corretor, aprovado: true);
             db.Corretores.AddRange(supervisor, corretor);
 
+            var tOntem = new DateTimeOffset(hojeUtc.AddDays(-1), TimeSpan.Zero);
+            var cOntem1 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tOntem);
+            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(cOntem1, tOntem.AddMinutes(5));
+            db.Conversas.Add(cOntem1);
+            db.Mensagens.Add(Mensagem.DoLead(cOntem1.Id, "Lead Ontem 1", tOntem));
+
+            var tOntemNoite = new DateTimeOffset(hojeUtc.AddDays(-1), TimeSpan.Zero).AddHours(23).AddMinutes(59);
+            var cOntem2 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tOntemNoite.AddMinutes(-7));
+            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(cOntem2, tOntemNoite);
+            db.Conversas.Add(cOntem2);
+            db.Mensagens.Add(Mensagem.DoLead(cOntem2.Id, "Lead Ontem 2", tOntemNoite.AddMinutes(-7)));
+
+            var tHojeMadrugada = new DateTimeOffset(hojeUtc, TimeSpan.Zero).AddMinutes(1);
+            var cHoje3 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tHojeMadrugada.AddMinutes(-9));
+            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(cHoje3, tHojeMadrugada);
+            db.Conversas.Add(cHoje3);
+            db.Mensagens.Add(Mensagem.DoLead(cHoje3.Id, "Lead Hoje 3", tHojeMadrugada.AddMinutes(-9)));
+
             var tHoje1 = new DateTimeOffset(hojeUtc, TimeSpan.Zero).AddHours(10);
-            var c1 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tHoje1);
-            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(c1, tHoje1.AddMinutes(10));
-            db.Conversas.Add(c1);
-            db.Mensagens.Add(Mensagem.DoLead(c1.Id, "Lead 1", tHoje1));
+            var cHoje1 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tHoje1);
+            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(cHoje1, tHoje1.AddMinutes(10));
+            db.Conversas.Add(cHoje1);
+            db.Mensagens.Add(Mensagem.DoLead(cHoje1.Id, "Lead Hoje 1", tHoje1));
 
             var tHoje2 = new DateTimeOffset(hojeUtc, TimeSpan.Zero).AddHours(11);
-            var c2 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tHoje2);
-            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(c2, tHoje2.AddMinutes(20));
-            db.Conversas.Add(c2);
-            db.Mensagens.Add(Mensagem.DoLead(c2.Id, "Lead 2", tHoje2));
-
-            var tOntem = new DateTimeOffset(hojeUtc.AddDays(-1), TimeSpan.Zero);
-            var c3 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tOntem);
-            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(c3, tOntem.AddMinutes(5));
-            db.Conversas.Add(c3);
-            db.Mensagens.Add(Mensagem.DoLead(c3.Id, "Lead 3", tOntem));
+            var cHoje2 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tHoje2);
+            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(cHoje2, tHoje2.AddMinutes(20));
+            db.Conversas.Add(cHoje2);
+            db.Mensagens.Add(Mensagem.DoLead(cHoje2.Id, "Lead Hoje 2", tHoje2));
 
             await db.SaveChangesAsync();
         }
@@ -189,8 +201,8 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
         Assert.Null(metricas.Extras.TempoMedianoDiario[2]);
         Assert.Null(metricas.Extras.TempoMedianoDiario[3]);
         Assert.Null(metricas.Extras.TempoMedianoDiario[4]);
-        Assert.Equal(5.0, metricas.Extras.TempoMedianoDiario[5]);
-        Assert.Equal(15.0, metricas.Extras.TempoMedianoDiario[6]);
+        Assert.Equal(6.0, metricas.Extras.TempoMedianoDiario[5]);
+        Assert.Equal(10.0, metricas.Extras.TempoMedianoDiario[6]);
 
         await LimparSchemaAsync();
 
@@ -243,13 +255,13 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
             db.Corretores.AddRange(supervisor, corretorA);
 
             var c1 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tAntesDoCorte);
-            typeof(Conversa).GetProperty(nameof(Conversa.IntencaoEm))!.SetValue(c1, tAntesDoCorte.AddMinutes(10));
-            typeof(Conversa).GetProperty(nameof(Conversa.EssenciaisEm))!.SetValue(c1, tAntesDoCorte.AddMinutes(20));
-            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(c1, tAntesDoCorte.AddMinutes(30));
-            typeof(Conversa).GetProperty(nameof(Conversa.CorretorAtribuidoEm))!.SetValue(c1, tAntesDoCorte.AddMinutes(40));
+            typeof(Conversa).GetProperty(nameof(Conversa.IntencaoEm))!.SetValue(c1, corte.AddMinutes(10));
+            typeof(Conversa).GetProperty(nameof(Conversa.EssenciaisEm))!.SetValue(c1, corte.AddMinutes(20));
+            typeof(Conversa).GetProperty(nameof(Conversa.EncaminhadaEm))!.SetValue(c1, corte.AddMinutes(30));
+            typeof(Conversa).GetProperty(nameof(Conversa.CorretorAtribuidoEm))!.SetValue(c1, corte.AddMinutes(40));
             db.Conversas.Add(c1);
             db.Mensagens.Add(Mensagem.DoLead(c1.Id, "Lead 1", tAntesDoCorte));
-            db.Encaminhamentos.Add(Encaminhamento.Novo(c1.Id, c1.LeadId, corretorA.Id, Especialidades.Moradia, tAntesDoCorte.AddMinutes(40)));
+            db.Encaminhamentos.Add(Encaminhamento.Novo(c1.Id, c1.LeadId, corretorA.Id, Especialidades.Moradia, corte.AddMinutes(40)));
 
             var c2 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tDepoisDoCorte);
             typeof(Conversa).GetProperty(nameof(Conversa.IntencaoEm))!.SetValue(c2, tDepoisDoCorte.AddMinutes(5));
@@ -273,7 +285,7 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
             var avancoAntes = metricasAntes.Avanco;
             var essenciaisAntes = metricasAntes.DadosEssenciaisPreenchidos;
 
-            Assert.Equal((30.0 + 15.0) / 2.0, medianaAntes);
+            Assert.Equal(3622.5, medianaAntes);
             Assert.Equal(1, metricasAntes.Avanco.Single(a => a.Etapa == "iniciadas").Conversas);
             Assert.Equal(1, metricasAntes.Avanco.Single(a => a.Etapa == "essenciais").Conversas);
             Assert.Equal(1, essenciaisAntes);
@@ -324,9 +336,11 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
         finally
         {
             await using var scope = fixture.Factory.Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
-            await db.RegistroMetricas.Where(r => r.Id == 1)
-                .ExecuteUpdateAsync(s => s.SetProperty(r => r.HistoricoDesde, MetricasPainelPostgresFixture.HistoricoDesde));
+            {
+                var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
+                await db.RegistroMetricas.Where(r => r.Id == 1)
+                    .ExecuteUpdateAsync(s => s.SetProperty(r => r.HistoricoDesde, MetricasPainelPostgresFixture.HistoricoDesde));
+            }
         }
     }
 
@@ -416,6 +430,8 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
         await LimparSchemaAsync();
 
         Corretor supervisor;
+        Guid cAId;
+        var tA = Agora.AddDays(-15);
 
         await using (var scope = fixture.Factory.Services.CreateAsyncScope())
         {
@@ -423,13 +439,35 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
             supervisor = NovaConta("Supervisor S45", PerfisDoPainel.Supervisor, aprovado: true);
             db.Corretores.Add(supervisor);
 
-            var tA = Agora.AddDays(-15);
-            var cA = Conversa.Nova(Guid.NewGuid(), Canais.Web, tA);
-            typeof(Conversa).GetProperty(nameof(Conversa.PrimeiroReengajamentoEm))!.SetValue(cA, tA);
+            var cA = Conversa.Nova(Guid.NewGuid(), Canais.Web, tA.AddDays(-1));
+            cAId = cA.Id;
             db.Conversas.Add(cA);
             db.Mensagens.Add(Mensagem.DoLead(cA.Id, "Antes do follow", tA.AddDays(-1)));
-            db.Mensagens.Add(Mensagem.DoLead(cA.Id, "Primeira mensagem", tA));
-            db.Mensagens.Add(Mensagem.DaLia(cA.Id, "Resposta Lia dentro da janela", ProximasAcoes.ContinuarConversa, tA.AddDays(1), []));
+
+            var turnoFollow1 = new TurnoResponse(
+                Resposta: "Follow 1",
+                Intencao: Intencoes.Compra,
+                CamposExtraidos: new CamposExtraidos(),
+                ProximaAcao: ProximasAcoes.ContinuarConversa,
+                ImoveisSugeridos: [],
+                SlotEscolhido: null,
+                EssenciaisCompletos: false);
+
+            var turnoFollow2 = new TurnoResponse(
+                Resposta: "Follow 2",
+                Intencao: Intencoes.Compra,
+                CamposExtraidos: new CamposExtraidos(),
+                ProximaAcao: ProximasAcoes.ContinuarConversa,
+                ImoveisSugeridos: [],
+                SlotEscolhido: null,
+                EssenciaisCompletos: false);
+
+            cA.RegistrarFollowUp(turnoFollow1, tA);
+            cA.RegistrarFollowUp(turnoFollow2, tA.AddDays(1));
+
+            Assert.Equal(tA, cA.PrimeiroReengajamentoEm);
+            Assert.Equal(2, cA.TentativasReengajamento);
+
             db.Mensagens.Add(Mensagem.DoLead(cA.Id, "Lead responde 1", tA.AddDays(2)));
             db.Mensagens.Add(Mensagem.DoLead(cA.Id, "Lead responde 2", tA.AddDays(3)));
 
@@ -453,6 +491,14 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
             db.Mensagens.Add(Mensagem.DoLead(cD.Id, "Lead sem follow", tD));
 
             await db.SaveChangesAsync();
+        }
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
+            var cAPersistida = await db.Conversas.AsNoTracking().SingleAsync(c => c.Id == cAId);
+            Assert.Equal(tA, cAPersistida.PrimeiroReengajamentoEm);
+            Assert.Equal(2, cAPersistida.TentativasReengajamento);
         }
 
         var token = await CriarSessaoAsync(fixture.Factory.Services, supervisor);
@@ -656,16 +702,16 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
 
                 var tAntesDoCorte = Agora.AddDays(-15);
                 var cAntiga = Conversa.Nova(Guid.NewGuid(), Canais.Web, tAntesDoCorte);
-                typeof(Conversa).GetProperty(nameof(Conversa.PrimeiroReengajamentoEm))!.SetValue(cAntiga, tAntesDoCorte);
-                typeof(Conversa).GetProperty(nameof(Conversa.EssenciaisEm))!.SetValue(cAntiga, tAntesDoCorte.AddHours(1));
+                typeof(Conversa).GetProperty(nameof(Conversa.PrimeiroReengajamentoEm))!.SetValue(cAntiga, corte);
+                typeof(Conversa).GetProperty(nameof(Conversa.EssenciaisEm))!.SetValue(cAntiga, corte.AddHours(1));
                 cAntiga.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(), tAntesDoCorte);
                 cAntiga.Lead.RegistrarContato(nomeCanario, telefoneCanario, emailCanario, tAntesDoCorte);
                 db.Conversas.Add(cAntiga);
                 db.Mensagens.Add(Mensagem.DoLead(cAntiga.Id, textoCanario, tAntesDoCorte));
-                db.Mensagens.Add(Mensagem.DoLead(cAntiga.Id, "Resposta dentro da janela", tAntesDoCorte.AddDays(2)));
-                db.Encaminhamentos.Add(Encaminhamento.Novo(cAntiga.Id, cAntiga.LeadId, corretor1.Id, Especialidades.Moradia, tAntesDoCorte));
+                db.Mensagens.Add(Mensagem.DoLead(cAntiga.Id, "Resposta dentro da janela", corte.AddDays(2)));
+                db.Encaminhamentos.Add(Encaminhamento.Novo(cAntiga.Id, cAntiga.LeadId, corretor1.Id, Especialidades.Moradia, corte));
 
-                var tDepoisDoCorte = Agora.AddDays(-5);
+                var tDepoisDoCorte = Agora.AddDays(-8);
                 var c2 = Conversa.Nova(Guid.NewGuid(), Canais.Web, tDepoisDoCorte);
                 typeof(Conversa).GetProperty(nameof(Conversa.PrimeiroReengajamentoEm))!.SetValue(c2, tDepoisDoCorte);
                 typeof(Conversa).GetProperty(nameof(Conversa.EssenciaisEm))!.SetValue(c2, tDepoisDoCorte.AddHours(1));
@@ -695,10 +741,10 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
             Assert.DoesNotContain(textoCanario, jsonBruto, StringComparison.OrdinalIgnoreCase);
 
             var metricasSup = (await respostaSup.Content.ReadFromJsonAsync<MetricasPainelResponse>())!;
-            Assert.Equal(1, metricasSup.Extras.FollowUp.Responderam);
-            Assert.Equal(1, metricasSup.Extras.FollowUp.JanelaEncerrada);
+            Assert.Equal(2, metricasSup.Extras.FollowUp.Responderam);
+            Assert.Equal(3, metricasSup.Extras.FollowUp.JanelaEncerrada);
             Assert.Equal(3, metricasSup.Extras.FollowUp.ComFollowUp);
-            Assert.Equal(2, metricasSup.Extras.FollowUp.EmObservacao);
+            Assert.Equal(0, metricasSup.Extras.FollowUp.EmObservacao);
             Assert.Equal(2, metricasSup.Avanco.Single(a => a.Etapa == "iniciadas").Conversas);
             Assert.Equal(1, metricasSup.Avanco.Single(a => a.Etapa == "essenciais").Conversas);
             Assert.Equal(1, metricasSup.DadosEssenciaisPreenchidos);
@@ -706,18 +752,18 @@ public sealed class TempoFollowUpPostgresTeste(MetricasPainelPostgresFixture fix
             var token1 = await CriarSessaoAsync(fixture.Factory.Services, corretor1);
             var metricas1 = await ObterMetricasAsync(token1);
             Assert.Equal(1, metricas1.Extras.FollowUp.Responderam);
-            Assert.Equal(1, metricas1.Extras.FollowUp.JanelaEncerrada);
+            Assert.Equal(2, metricas1.Extras.FollowUp.JanelaEncerrada);
             Assert.Equal(2, metricas1.Extras.FollowUp.ComFollowUp);
-            Assert.Equal(1, metricas1.Extras.FollowUp.EmObservacao);
+            Assert.Equal(0, metricas1.Extras.FollowUp.EmObservacao);
             Assert.Equal(1, metricas1.Avanco.Single(a => a.Etapa == "atribuidas").Conversas);
             Assert.Equal(1, metricas1.DadosEssenciaisPreenchidos);
 
             var token2 = await CriarSessaoAsync(fixture.Factory.Services, corretor2);
             var metricas2 = await ObterMetricasAsync(token2);
-            Assert.Equal(0, metricas2.Extras.FollowUp.JanelaEncerrada);
-            Assert.Equal(0, metricas2.Extras.FollowUp.Responderam);
+            Assert.Equal(1, metricas2.Extras.FollowUp.JanelaEncerrada);
+            Assert.Equal(1, metricas2.Extras.FollowUp.Responderam);
             Assert.Equal(1, metricas2.Extras.FollowUp.ComFollowUp);
-            Assert.Equal(1, metricas2.Extras.FollowUp.EmObservacao);
+            Assert.Equal(0, metricas2.Extras.FollowUp.EmObservacao);
             Assert.Equal(1, metricas2.Avanco.Single(a => a.Etapa == "atribuidas").Conversas);
             Assert.Equal(0, metricas2.DadosEssenciaisPreenchidos);
         }
