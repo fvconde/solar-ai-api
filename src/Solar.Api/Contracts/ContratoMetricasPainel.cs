@@ -10,7 +10,8 @@ public sealed record MetricasPainelResponse(
     IntencoesMetricasPainel LeadsPorIntencao,
     EquipeMetricasPainel? Equipe,
     ExtrasMetricasPainel Extras,
-    IReadOnlyList<AvancoMetricasPainel> Avanco);
+    IReadOnlyList<AvancoMetricasPainel> Avanco,
+    int DadosEssenciaisPreenchidos);
 
 public sealed record AvancoMetricasPainel(
     string Etapa,

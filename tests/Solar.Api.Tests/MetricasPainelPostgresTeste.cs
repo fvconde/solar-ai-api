@@ -186,7 +186,7 @@ public sealed class MetricasPainelPostgresTeste(MetricasPainelPostgresFixture fi
             }
 
             using var doc = JsonDocument.Parse(json);
-            Assert.Equal(new[] { "avanco", "conversasIniciadas", "equipe", "extras", "horariosConfirmados",
+            Assert.Equal(new[] { "avanco", "conversasIniciadas", "dadosEssenciaisPreenchidos", "equipe", "extras", "horariosConfirmados",
                 "leadsPorIntencao", "periodo", "reservasProximos7Dias" },
                 doc.RootElement.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
             foreach (var nome in new[] { "nome", "telefone", "email", "texto", "leadId", "conversaId" })
@@ -526,6 +526,7 @@ public sealed class MetricasPainelPostgresTeste(MetricasPainelPostgresFixture fi
         Assert.Equal(new FollowUpMetricasPainel(metricas.Extras.FollowUp.JanelaDias, 0, 0, 0, 0), metricas.Extras.FollowUp);
         Assert.NotNull(metricas.Avanco);
         Assert.All(metricas.Avanco, a => Assert.Equal(0, a.Conversas));
+        Assert.Equal(0, metricas.DadosEssenciaisPreenchidos);
     }
 
     private sealed record Cenario(

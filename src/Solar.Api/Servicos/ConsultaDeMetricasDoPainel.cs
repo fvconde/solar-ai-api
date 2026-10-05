@@ -46,7 +46,8 @@ internal static class ConsultaDeMetricasDoPainel
                 TempoMedianoMin: null,
                 TempoMedianoDiario: [],
                 FollowUp: new FollowUpMetricasPainel(janelaRespostaFollowUpDias, 0, 0, 0, 0)),
-            Avanco: avanco);
+            Avanco: avanco,
+            DadosEssenciaisPreenchidos: 0);
     }
 
     public static async Task<MetricasPainelResponse> ObterAsync(
@@ -95,9 +96,12 @@ internal static class ConsultaDeMetricasDoPainel
             .Select(grupo => new { ConversaId = grupo.Key, Em = grupo.Min(m => m.Em) })
             .ToListAsync(cancellationToken);
 
-        var iniciadasIds = primeirasMensagens
+        var iniciadasDict = primeirasMensagens
             .Where(m => m.Em >= periodo.Inicio && m.Em <= periodo.AtualizadoEm)
-            .Select(m => m.ConversaId).ToArray();
+            .ToDictionary(m => m.ConversaId, m => m.Em);
+
+        var iniciadasIds = iniciadasDict.Keys.ToArray();
+        var conversasIniciadas = conversasFiltradas.Where(c => iniciadasDict.ContainsKey(c.Id)).ToList();
 
         var avancoIds = primeirasMensagens
             .Where(m => m.Em >= periodo.Inicio && m.Em <= periodo.AtualizadoEm && m.Em >= periodo.HistoricoDesde)
@@ -105,6 +109,7 @@ internal static class ConsultaDeMetricasDoPainel
             .ToHashSet();
 
         var conversasAvanco = conversasFiltradas.Where(c => avancoIds.Contains(c.Id)).ToList();
+        var dadosEssenciaisPreenchidos = conversasAvanco.Count(c => c.EssenciaisEm.HasValue && c.EssenciaisEm.Value <= periodo.AtualizadoEm);
 
         var avancoIdsArray = avancoIds.ToArray();
         var conversasComHorarioConfirmado = avancoIdsArray.Length == 0
@@ -204,6 +209,88 @@ internal static class ConsultaDeMetricasDoPainel
             db, db.Leads.AsNoTracking().Where(lead => leadIds.Contains(lead.Id)), cancellationToken);
         var vencimentos = contatos.Select(contato => contato.Em.AddMonths(prazoRetencaoMeses)).ToList();
 
+        var temposValidos = new List<(double Duracao, DateTimeOffset EncaminhadaEm)>();
+        foreach (var c in conversasIniciadas)
+        {
+            var primeiraMensagemReal = iniciadasDict[c.Id];
+            if (c.EncaminhadaEm.HasValue &&
+                c.EncaminhadaEm.Value <= periodo.AtualizadoEm &&
+                c.EncaminhadaEm.Value >= primeiraMensagemReal)
+            {
+                var duracao = (c.EncaminhadaEm.Value - primeiraMensagemReal).TotalMinutes;
+                temposValidos.Add((duracao, c.EncaminhadaEm.Value));
+            }
+        }
+
+        var duracoesGerais = temposValidos.Select(t => t.Duracao).ToList();
+        var tempoMedianoMin = CalcularMediana(duracoesGerais);
+
+        var hojeUtc = periodo.AtualizadoEm.UtcDateTime.Date;
+        var diasSete = Enumerable.Range(0, 7).Select(i => hojeUtc.AddDays(-6 + i)).ToArray();
+        var diaInicioUtc = diasSete[0];
+        var diaFimUtc = diasSete[6];
+
+        var temposNaJanela = temposValidos
+            .Where(t => t.EncaminhadaEm.UtcDateTime.Date >= diaInicioUtc && t.EncaminhadaEm.UtcDateTime.Date <= diaFimUtc)
+            .ToList();
+
+        IReadOnlyList<double?> tempoMedianoDiario;
+        if (temposNaJanela.Count == 0)
+        {
+            tempoMedianoDiario = [];
+        }
+        else
+        {
+            var porDia = temposNaJanela
+                .GroupBy(t => t.EncaminhadaEm.UtcDateTime.Date)
+                .ToDictionary(g => g.Key, g => g.Select(t => t.Duracao).ToList());
+
+            tempoMedianoDiario = diasSete.Select(dia =>
+                porDia.TryGetValue(dia, out var lista) ? CalcularMediana(lista) : null).ToArray();
+        }
+
+        var conversasComFollowUp = conversasIniciadas
+            .Where(c => c.PrimeiroReengajamentoEm.HasValue && c.PrimeiroReengajamentoEm.Value <= periodo.AtualizadoEm)
+            .ToList();
+
+        var comFollowUp = conversasComFollowUp.Count;
+
+        var conversasEncerradas = conversasComFollowUp
+            .Where(c => c.PrimeiroReengajamentoEm!.Value.AddDays(janelaRespostaFollowUpDias) <= periodo.AtualizadoEm)
+            .ToList();
+
+        var janelaEncerrada = conversasEncerradas.Count;
+        var emObservacao = comFollowUp - janelaEncerrada;
+
+        var encerradasIds = conversasEncerradas.Select(c => c.Id).ToArray();
+        int responderam = 0;
+        if (encerradasIds.Length > 0)
+        {
+            var mensagensLeadEncerradas = await db.Mensagens.AsNoTracking()
+                .Where(m => encerradasIds.Contains(m.ConversaId) && m.Papel == Papeis.Lead)
+                .Select(m => new { m.ConversaId, m.Em })
+                .ToListAsync(cancellationToken);
+
+            var mensagensPorConversa = mensagensLeadEncerradas
+                .GroupBy(m => m.ConversaId)
+                .ToDictionary(g => g.Key, g => g.Select(m => m.Em).ToList());
+
+            responderam = conversasEncerradas.Count(c =>
+            {
+                var inicioJanela = c.PrimeiroReengajamentoEm!.Value;
+                var fimJanela = inicioJanela.AddDays(janelaRespostaFollowUpDias);
+                return mensagensPorConversa.TryGetValue(c.Id, out var listaEm) &&
+                       listaEm.Any(em => em > inicioJanela && em <= fimJanela);
+            });
+        }
+
+        var followUp = new FollowUpMetricasPainel(
+            janelaRespostaFollowUpDias,
+            comFollowUp,
+            janelaEncerrada,
+            responderam,
+            emObservacao);
+
         return new(periodo, iniciadasIds.Length, totalHorariosConfirmados,
             slots.Count(s => s.Inicio <= periodo.AtualizadoEm.AddDays(7)),
             new(autorizados.Count(lead => lead.Intencao == Intencoes.Compra),
@@ -227,10 +314,11 @@ internal static class ConsultaDeMetricasDoPainel
                         em <= periodo.AtualizadoEm.AddDays(30)),
                     vencimentos.Where(em => em >= periodo.AtualizadoEm)
                         .Select(em => (DateTimeOffset?)em).Min()),
-                TempoMedianoMin: null,
-                TempoMedianoDiario: [],
-                FollowUp: new FollowUpMetricasPainel(janelaRespostaFollowUpDias, 0, 0, 0, 0)),
-            avanco);
+                TempoMedianoMin: tempoMedianoMin,
+                TempoMedianoDiario: tempoMedianoDiario,
+                FollowUp: followUp),
+            avanco,
+            dadosEssenciaisPreenchidos);
     }
 
     private static string NormalizarRegiao(string regiao)
@@ -253,5 +341,22 @@ internal static class ConsultaDeMetricasDoPainel
             1 => partes[0][..Math.Min(2, partes[0].Length)].ToUpperInvariant(),
             _ => (partes[0][..1] + partes[^1][..1]).ToUpperInvariant(),
         };
+    }
+
+    private static double? CalcularMediana(List<double> valores)
+    {
+        if (valores.Count == 0)
+        {
+            return null;
+        }
+
+        valores.Sort();
+        var n = valores.Count;
+        if (n % 2 == 1)
+        {
+            return valores[n / 2];
+        }
+
+        return (valores[(n / 2) - 1] + valores[n / 2]) / 2.0;
     }
 }

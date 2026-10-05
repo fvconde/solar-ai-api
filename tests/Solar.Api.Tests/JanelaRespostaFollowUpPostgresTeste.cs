@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Http.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Solar.Api.Contracts;
 using Solar.Api.Dominio;
 using Solar.Api.Persistencia;
 using Solar.Api.Seguranca;
@@ -27,6 +29,9 @@ public sealed class JanelaRespostaFollowUpPostgresTeste(MetricasPainelPostgresFi
             using var client = Cliente(supervisorToken);
             using var resposta = await client.GetAsync("/api/painel/metricas");
             Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+            var metricas = await resposta.Content.ReadFromJsonAsync<MetricasPainelResponse>();
+            Assert.NotNull(metricas);
+            Assert.Equal(7, metricas.Extras.FollowUp.JanelaDias);
         }
         finally
         {
@@ -49,6 +54,9 @@ public sealed class JanelaRespostaFollowUpPostgresTeste(MetricasPainelPostgresFi
             using var client = Cliente(supervisorToken);
             using var resposta = await client.GetAsync("/api/painel/metricas");
             Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+            var metricas = await resposta.Content.ReadFromJsonAsync<MetricasPainelResponse>();
+            Assert.NotNull(metricas);
+            Assert.Equal(3, metricas.Extras.FollowUp.JanelaDias);
         }
         finally
         {
