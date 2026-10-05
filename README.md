@@ -1,5 +1,7 @@
 # solar-ai-api
 
+[![CI](https://github.com/fvconde/solar-ai-api/actions/workflows/ci.yml/badge.svg)](https://github.com/fvconde/solar-ai-api/actions/workflows/ci.yml)
+
 > **Camada de Domínio, Persistência e Regras de Negócio do Solar**  
 > Para a visão geral da plataforma, decisões de produto, governança completa de privacidade e diagrama de arquitetura do sistema, consulte o **[README Hub do Solar](https://github.com/fvconde/solar-ai-docs)**.
 
