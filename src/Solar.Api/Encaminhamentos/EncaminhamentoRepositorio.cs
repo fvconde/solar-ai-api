@@ -137,7 +137,7 @@ public sealed class EncaminhamentoRepositorio(SolarDbContext db)
         foreach (var encaminhamento in encaminhamentos)
         {
             var conversa = conversas[encaminhamento.ConversaId];
-            var corretores = await CandidatosAsync(encaminhamento.Especialidade, cancellationToken);
+            var corretores = await CandidatosAsync(encaminhamento.Especialidade, cancellationToken, corretorId);
             var escolhido = EscolhaDeCorretor.EscolherPorEspecialidade(
                 encaminhamento.Especialidade,
                 conversa.Lead.Regiao,
@@ -153,13 +153,15 @@ public sealed class EncaminhamentoRepositorio(SolarDbContext db)
 
     private async Task<IReadOnlyList<CorretorCandidato>> CandidatosAsync(
         string especialidade,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? corretorOrigemId = null)
     {
         var corretores = await db.Corretores
             .AsNoTracking()
             .Where(c => c.Perfil == PerfisDoPainel.Corretor
                 && c.StatusCorretor == StatusDoCorretor.Aprovado
-                && c.Especialidades.Contains(especialidade))
+                && c.Especialidades.Contains(especialidade)
+                && (corretorOrigemId == null || c.Id != corretorOrigemId))
             .Select(c => new
             {
                 c.Id,
