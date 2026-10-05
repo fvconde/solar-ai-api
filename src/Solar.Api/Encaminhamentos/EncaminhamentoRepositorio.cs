@@ -72,6 +72,11 @@ public sealed class EncaminhamentoRepositorio(SolarDbContext db)
 
         conversa.Lead.MarcarEncaminhado(em);
 
+        if (escolhido is not null)
+        {
+            conversa.RegistrarCorretorAtribuido(em);
+        }
+
         var encaminhamento = Encaminhamento.Novo(
             conversa.Id, conversa.LeadId, escolhido, especialidade, em);
 
@@ -138,6 +143,10 @@ public sealed class EncaminhamentoRepositorio(SolarDbContext db)
                 conversa.Lead.Regiao,
                 corretores);
             encaminhamento.Atribuir(escolhido, em);
+            if (escolhido is not null)
+            {
+                conversa.RegistrarCorretorAtribuido(em);
+            }
             await db.SaveChangesAsync(cancellationToken);
         }
     }

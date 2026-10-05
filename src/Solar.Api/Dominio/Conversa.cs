@@ -130,6 +130,11 @@ public sealed class Conversa
         AtualizadaEm = em;
     }
 
+    public void RegistrarCorretorAtribuido(DateTimeOffset em)
+    {
+        CorretorAtribuidoEm ??= em;
+    }
+
     public void DefinirDesfecho(string desfecho)
     {
         Desfecho = desfecho;
