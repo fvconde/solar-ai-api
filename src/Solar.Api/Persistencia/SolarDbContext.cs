@@ -132,7 +132,7 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
                 .OnDelete(DeleteBehavior.Cascade);
 
             // Restrict, e nao cascade: apagar corretor nao pode apagar o registro
-            // de que o lead foi encaminhado. Nao ha tela que apague corretor.
+            // de que o lead foi encaminhado.
             encaminhamento.HasOne(e => e.Corretor)
                 .WithMany()
                 .HasForeignKey(e => e.CorretorId)
