@@ -626,6 +626,12 @@ public class PainelController : ControllerBase
             throw new InvalidOperationException("Expurgo:PrazoRetencaoMeses deve ser positivo.");
         }
 
+        var janelaRespostaFollowUpDias = configuracao.GetValue("Metricas:JanelaRespostaFollowUpDias", 7);
+        if (janelaRespostaFollowUpDias <= 0)
+        {
+            throw new InvalidOperationException("Metricas:JanelaRespostaFollowUpDias deve ser positivo.");
+        }
+
         var supervisor = sessao.Corretor.Perfil == PerfisDoPainel.Supervisor;
         if (!supervisor && sessao.Corretor.StatusCorretor == StatusDoCorretor.EmAnalise)
         {
