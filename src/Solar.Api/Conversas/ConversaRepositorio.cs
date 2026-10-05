@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Solar.Api.Contracts;
 using Solar.Api.Dominio;
 using Solar.Api.Encaminhamentos;
 using Solar.Api.Persistencia;
+using Solar.Api.Seguranca;
 
 namespace Solar.Api.Conversas;
 
@@ -99,7 +101,8 @@ public sealed class ConversaRepositorio(SolarDbContext db)
         string versaoAvisoPrivacidade,
         DateTimeOffset em,
         CancellationToken cancellationToken,
-        Guid? contaId = null)
+        Guid? contaId = null,
+        byte[]? chaveExclusaoHash = null)
     {
         var conversa = await ObterOuCriarAsync(id, em, cancellationToken);
 
@@ -113,6 +116,13 @@ public sealed class ConversaRepositorio(SolarDbContext db)
             {
                 await VincularContaAsync(conversa, contaId.Value, em, cancellationToken);
             }
+        }
+
+        if (db.Entry(conversa).State == EntityState.Added
+            && conversa.ContaId is null
+            && chaveExclusaoHash is not null)
+        {
+            conversa.DefinirChaveExclusaoHash(chaveExclusaoHash);
         }
 
         conversa.Lead.RegistrarConsentimento(versaoAvisoPrivacidade, em);
@@ -311,6 +321,61 @@ public sealed class ConversaRepositorio(SolarDbContext db)
             ? consulta.FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
             : consulta.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
+
+    public async Task<ExclusaoTitularResultado> ExcluirPeloTitularAsync(
+        Guid conversaId,
+        Guid leadInspecionadoId,
+        IReadOnlyCollection<Guid> conversasInspecionadas,
+        ProvaExclusaoTitular prova,
+        CancellationToken cancellationToken)
+    {
+        await using var transacao = await db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT 1 FROM leads WHERE id = {leadInspecionadoId} FOR UPDATE", cancellationToken);
+            var atuais = await db.Conversas.FromSqlInterpolated(
+                    $"SELECT * FROM conversas WHERE lead_id = {leadInspecionadoId} OR id = {conversaId} ORDER BY id FOR UPDATE")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            var conversa = atuais.SingleOrDefault(c => c.Id == conversaId);
+            if (conversa is null)
+                return new(EstadoExclusaoTitular.NaoEncontrada);
+            if (!prova.Autoriza(conversa))
+                return new(EstadoExclusaoTitular.NaoAutorizada);
+            if (conversa.LeadId != leadInspecionadoId
+                || !atuais.Select(c => c.Id).ToHashSet().SetEquals(conversasInspecionadas))
+                return new(EstadoExclusaoTitular.Conflito);
+
+            var excluirLead = atuais.Count == 1;
+            DateTimeOffset removidoEm;
+            if (excluirLead)
+            {
+                var resultado = await ExcluirLeadAsync(conversa.LeadId, cancellationToken);
+                if (resultado is null)
+                    return new(EstadoExclusaoTitular.NaoEncontrada);
+                removidoEm = resultado.RemovidoEm;
+            }
+            else
+            {
+                var resultado = await ExcluirApenasConversaAsync(conversaId, cancellationToken);
+                if (resultado is null)
+                    return new(EstadoExclusaoTitular.NaoEncontrada);
+                removidoEm = resultado.RemovidoEm;
+            }
+
+            await transacao.CommitAsync(cancellationToken);
+            return new(EstadoExclusaoTitular.Excluida, excluirLead, removidoEm);
+        }
+        catch (Exception erro) when (ConflitoDeTransacao(erro))
+        {
+            return new(EstadoExclusaoTitular.Conflito);
+        }
+    }
+
+    private static bool ConflitoDeTransacao(Exception erro) =>
+        (erro as PostgresException ?? erro.InnerException as PostgresException)?.SqlState
+            is PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure;
 
     /// <summary>
     /// Elimina definitivamente um lead e todos os seus registros vinculados

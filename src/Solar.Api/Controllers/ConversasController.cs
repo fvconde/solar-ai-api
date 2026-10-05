@@ -26,6 +26,8 @@ public class ConversasController(
     IHostEnvironment environment,
     ILogger<ConversasController> logger) : ControllerBase
 {
+    public const string NomeCookieChaveExclusao = "solar.chave_exclusao";
+
     private const int JanelaPadrao = 20;
 
     private int Janela => Math.Clamp(
@@ -58,12 +60,31 @@ public class ConversasController(
                 title: "versao do aviso de privacidade invalida");
         }
 
+        var contaId = ContaClienteAutenticada();
+        var chave = existente is null && contaId is null
+            ? TokenSeguro.Criar()
+            : null;
+        var hash = chave is null ? null : TokenSeguro.Sha256(chave);
         var conversa = await conversas.RegistrarConsentimentoAsync(
             id,
             requisicao.VersaoAvisoPrivacidade,
             DateTimeOffset.UtcNow,
             cancellationToken,
-            ContaClienteAutenticada());
+            contaId,
+            hash);
+
+        if (chave is not null && hash is not null
+            && conversa.ContaId is null
+            && TokenSeguro.HashesIguais(conversa.ChaveExclusaoHash, hash))
+        {
+            Response.Cookies.Append(NomeCookieChaveExclusao, chave, new CookieOptions
+            {
+                HttpOnly = true,
+                SameSite = SameSiteMode.Strict,
+                Secure = !environment.IsDevelopment(),
+                Path = $"/conversas/{conversa.Id:D}",
+            });
+        }
 
         return Ok(new ConsentimentoResponse(
             conversa.Id,
@@ -309,6 +330,50 @@ public class ConversasController(
                 Escopo: "apenas_conversa",
                 Mensagem: "Conversa e suas mensagens foram removidas. O lead e outras conversas permanecem preservados."));
         }
+    }
+
+    [HttpDelete("{id:guid}/titular")]
+    [EnableRateLimiting("exclusao")]
+    [ProducesResponseType<ExclusaoTitularResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ExclusaoTitularResponse>> ExcluirPeloTitular(
+        Guid id, CancellationToken cancellationToken)
+    {
+        var prova = new ProvaExclusaoTitular(ContaAutenticada(),
+            TokenSeguro.TentarCalcularSha256(Request.Cookies[NomeCookieChaveExclusao]));
+        var conversa = await conversas.ObterAsync(id, cancellationToken);
+        if (conversa is null)
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+        if (!prova.Autoriza(conversa))
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "exclusao nao autorizada");
+
+        var vinculadas = await conversas.ObterIdsDeConversasDoLeadAsync(conversa.LeadId, cancellationToken);
+        using var trava = await travas.TravarMultiplasAsync(
+            vinculadas.Append(id).Append(conversa.LeadId), cancellationToken);
+        var resultado = await conversas.ExcluirPeloTitularAsync(
+            id, conversa.LeadId, vinculadas, prova, cancellationToken);
+        if (resultado.Estado == EstadoExclusaoTitular.NaoEncontrada)
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+        if (resultado.Estado == EstadoExclusaoTitular.NaoAutorizada)
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "exclusao nao autorizada");
+        if (resultado.Estado == EstadoExclusaoTitular.Conflito)
+            return Problem(statusCode: StatusCodes.Status409Conflict,
+                title: "conversa alterada durante a solicitacao; tente novamente");
+
+        Response.Cookies.Delete(NomeCookieChaveExclusao, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Strict,
+            Secure = !environment.IsDevelopment(),
+            Path = $"/conversas/{id:D}",
+        });
+        return Ok(new ExclusaoTitularResponse(
+            resultado.LeadExcluido,
+            resultado.RemovidoEm!.Value,
+            resultado.LeadExcluido ? "lead_e_vinculos" : "apenas_conversa",
+            "A conversa e suas mensagens foram apagadas definitivamente."));
     }
 
     private Guid? ContaAutenticada()

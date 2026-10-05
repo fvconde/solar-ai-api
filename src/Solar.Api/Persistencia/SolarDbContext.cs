@@ -172,6 +172,7 @@ public sealed class SolarDbContext(DbContextOptions<SolarDbContext> options) : D
             conversa.Property(c => c.Canal).HasMaxLength(20).IsRequired();
             conversa.Property(c => c.TentativasReengajamento).IsRequired().HasDefaultValue(0);
             conversa.Property(c => c.Desfecho).HasMaxLength(30);
+            conversa.Property(c => c.ChaveExclusaoHash).HasColumnType("bytea");
 
             conversa.HasOne<Corretor>()
                 .WithMany()
