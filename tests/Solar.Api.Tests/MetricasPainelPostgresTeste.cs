@@ -37,7 +37,7 @@ public sealed class MetricasPainelPostgresTeste(MetricasPainelPostgresFixture fi
         using var resposta = await client.GetAsync("/api/painel/metricas");
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
         var metricas = (await resposta.Content.ReadFromJsonAsync<MetricasPainelResponse>())!;
-        Assert.Equal(new PeriodoMetricasPainel(30, Agora.AddDays(-30), Agora), metricas.Periodo);
+        Assert.Equal(new PeriodoMetricasPainel(30, Agora.AddDays(-30), Agora, MetricasPainelPostgresFixture.HistoricoDesde), metricas.Periodo);
         Assert.Equal(2, fixture.Relogio.Chamadas - chamadasAntes);
         AssertZeradas(metricas);
         Assert.Equal(1, metricas.Extras.Privacidade.PrazoRetencaoMeses);
@@ -49,8 +49,10 @@ public sealed class MetricasPainelPostgresTeste(MetricasPainelPostgresFixture fi
         var json = await resposta.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
         Assert.Equal(Agora, doc.RootElement.GetProperty("periodo").GetProperty("atualizadoEm").GetDateTimeOffset());
-        Assert.False(doc.RootElement.TryGetProperty("avanco", out _));
-        Assert.False(doc.RootElement.GetProperty("periodo").TryGetProperty("historicoDesde", out _));
+        Assert.True(doc.RootElement.TryGetProperty("avanco", out var avancoProp));
+        Assert.Equal(JsonValueKind.Array, avancoProp.ValueKind);
+        Assert.True(doc.RootElement.GetProperty("periodo").TryGetProperty("historicoDesde", out var historicoDesdeProp));
+        Assert.Equal(MetricasPainelPostgresFixture.HistoricoDesde, historicoDesdeProp.GetDateTimeOffset());
         Assert.DoesNotContain("NaN", json);
         Assert.DoesNotContain("%", json);
         var corretor = await ObterAsync(cenario.CorretorToken);
@@ -184,7 +186,7 @@ public sealed class MetricasPainelPostgresTeste(MetricasPainelPostgresFixture fi
             }
 
             using var doc = JsonDocument.Parse(json);
-            Assert.Equal(new[] { "conversasIniciadas", "equipe", "extras", "horariosConfirmados",
+            Assert.Equal(new[] { "avanco", "conversasIniciadas", "equipe", "extras", "horariosConfirmados",
                 "leadsPorIntencao", "periodo", "reservasProximos7Dias" },
                 doc.RootElement.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
             foreach (var nome in new[] { "nome", "telefone", "email", "texto", "leadId", "conversaId" })
@@ -519,6 +521,11 @@ public sealed class MetricasPainelPostgresTeste(MetricasPainelPostgresFixture fi
         Assert.Equal(0, metricas.Extras.Privacidade.ComConsentimento);
         Assert.Equal(0, metricas.Extras.Privacidade.Vencem30Dias);
         Assert.Null(metricas.Extras.Privacidade.ProximoVencimento);
+        Assert.Null(metricas.Extras.TempoMedianoMin);
+        Assert.Empty(metricas.Extras.TempoMedianoDiario);
+        Assert.Equal(new FollowUpMetricasPainel(metricas.Extras.FollowUp.JanelaDias, 0, 0, 0, 0), metricas.Extras.FollowUp);
+        Assert.NotNull(metricas.Avanco);
+        Assert.All(metricas.Avanco, a => Assert.Equal(0, a.Conversas));
     }
 
     private sealed record Cenario(

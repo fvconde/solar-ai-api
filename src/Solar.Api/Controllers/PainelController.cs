@@ -619,7 +619,6 @@ public class PainelController : ControllerBase
         }
 
         var agora = timeProvider.GetUtcNow();
-        var periodo = new PeriodoMetricasPainel(dias, agora.AddDays(-dias), agora);
         var prazoRetencaoMeses = configuracao.GetValue("Expurgo:PrazoRetencaoMeses", 12);
         if (prazoRetencaoMeses <= 0)
         {
@@ -632,14 +631,22 @@ public class PainelController : ControllerBase
             throw new InvalidOperationException("Metricas:JanelaRespostaFollowUpDias deve ser positivo.");
         }
 
+        var historicoDesde = await db.RegistroMetricas
+            .AsNoTracking()
+            .Where(r => r.Id == 1)
+            .Select(r => r.HistoricoDesde)
+            .SingleAsync(cancellationToken);
+
+        var periodo = new PeriodoMetricasPainel(dias, agora.AddDays(-dias), agora, historicoDesde);
+
         var supervisor = sessao.Corretor.Perfil == PerfisDoPainel.Supervisor;
         if (!supervisor && sessao.Corretor.StatusCorretor == StatusDoCorretor.EmAnalise)
         {
-            return Ok(ConsultaDeMetricasDoPainel.Vazia(periodo, prazoRetencaoMeses, supervisor));
+            return Ok(ConsultaDeMetricasDoPainel.Vazia(periodo, prazoRetencaoMeses, supervisor, janelaRespostaFollowUpDias));
         }
 
         return Ok(await ConsultaDeMetricasDoPainel.ObterAsync(
-            db, sessao.CorretorId, supervisor, periodo, prazoRetencaoMeses, cancellationToken));
+            db, sessao.CorretorId, supervisor, periodo, prazoRetencaoMeses, janelaRespostaFollowUpDias, cancellationToken));
     }
 
     [HttpGet("leads/{id:guid}")]

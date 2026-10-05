@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Solar.Api.Contracts;
 
 public sealed record MetricasPainelResponse(
@@ -7,9 +9,15 @@ public sealed record MetricasPainelResponse(
     int ReservasProximos7Dias,
     IntencoesMetricasPainel LeadsPorIntencao,
     EquipeMetricasPainel? Equipe,
-    ExtrasMetricasPainel Extras);
+    ExtrasMetricasPainel Extras,
+    IReadOnlyList<AvancoMetricasPainel> Avanco);
 
-public sealed record PeriodoMetricasPainel(int Dias, DateTimeOffset Inicio, DateTimeOffset AtualizadoEm);
+public sealed record AvancoMetricasPainel(
+    string Etapa,
+    int Conversas,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SemEssenciais = null);
+
+public sealed record PeriodoMetricasPainel(int Dias, DateTimeOffset Inicio, DateTimeOffset AtualizadoEm, DateTimeOffset HistoricoDesde);
 
 public sealed record IntencoesMetricasPainel(int Compra, int Aluguel, int Investimento, int SemIntencao);
 
@@ -25,7 +33,17 @@ public sealed record ExtrasMetricasPainel(
     RegioesMetricasPainel Regioes,
     IReadOnlyList<ImovelMetricasPainel> Imoveis,
     IReadOnlyList<HorarioMetricasPainel> ProximosHorarios,
-    PrivacidadeMetricasPainel Privacidade);
+    PrivacidadeMetricasPainel Privacidade,
+    double? TempoMedianoMin,
+    IReadOnlyList<double?> TempoMedianoDiario,
+    FollowUpMetricasPainel FollowUp);
+
+public sealed record FollowUpMetricasPainel(
+    int JanelaDias,
+    int ComFollowUp,
+    int JanelaEncerrada,
+    int Responderam,
+    int EmObservacao);
 
 public sealed record ScoreMetricasPainel(int Frio, int Morno, int Quente, int SemAvaliacao);
 
