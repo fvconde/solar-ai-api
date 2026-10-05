@@ -121,4 +121,6 @@ public sealed record TurnoResponse(
     CamposExtraidos CamposExtraidos,
     string ProximaAcao,
     IReadOnlyList<ImovelSugerido> ImoveisSugeridos,
-    long? SlotEscolhido);
+    long? SlotEscolhido,
+    bool EssenciaisCompletos = false);
+
