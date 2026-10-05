@@ -91,6 +91,21 @@ public sealed class Conversa
 
         Lead.Fundir(turno.Intencao, turno.CamposExtraidos, em);
 
+        if (Lead.Intencao is Intencoes.Compra or Intencoes.Aluguel or Intencoes.Investimento)
+        {
+            IntencaoEm ??= em;
+        }
+
+        if (turno.EssenciaisCompletos)
+        {
+            EssenciaisEm ??= em;
+        }
+
+        if (turno.ProximaAcao is ProximasAcoes.AgendarReuniao or ProximasAcoes.DirecionarEspecialista)
+        {
+            EncaminhadaEm ??= em;
+        }
+
         if (turno.ProximaAcao == "encerrar" || turno.ProximaAcao == "agendar_reuniao" || turno.ProximaAcao == "direcionar_especialista")
         {
             Desfecho = turno.ProximaAcao;
@@ -102,6 +117,8 @@ public sealed class Conversa
     public void RegistrarFollowUp(TurnoResponse turno, DateTimeOffset em)
     {
         _mensagens.Add(Mensagem.DaLia(Id, turno.Resposta, turno.ProximaAcao, em, turno.ImoveisSugeridos));
+
+        PrimeiroReengajamentoEm ??= em;
 
         TentativasReengajamento++;
 
