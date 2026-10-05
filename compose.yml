@@ -46,6 +46,7 @@ services:
       # silenciosa que ja aconteceu uma vez, porque o .env tinha a chave e o
       # compose nao a repassava.
       SEGURANCA__CHAVEPRIVACIDADE: ${SEGURANCA__CHAVEPRIVACIDADE:?defina SEGURANCA__CHAVEPRIVACIDADE no .env do solar-ai-api}
+      Metricas__JanelaRespostaFollowUpDias: ${METRICAS__JANELARESPOSTAFOLLOWUPDIAS:-7}
       SOLAR_VERSION: ${SOLAR_VERSION:-dev}
     ports:
       - "8080:8080"

@@ -16,6 +16,7 @@ namespace Solar.Api.Tests;
 public sealed class MetricasPainelPostgresFixture : IAsyncLifetime
 {
     public static readonly DateTimeOffset Agora = new(2026, 10, 3, 12, 0, 0, TimeSpan.Zero);
+    public static readonly DateTimeOffset HistoricoDesde = Agora.AddDays(-400);
     private readonly string schema = "s22_metricas_" + Guid.NewGuid().ToString("N");
     private string conexao = string.Empty;
     private readonly string? conexaoAplicacaoAnterior =
@@ -35,6 +36,12 @@ public sealed class MetricasPainelPostgresFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", builder.ConnectionString);
         Factory = new MetricasPainelApiFactory(builder.ConnectionString, schema, Relogio);
         using var client = Factory.CreateClient();
+        await using (var scope = Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
+            await db.RegistroMetricas.Where(r => r.Id == 1)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.HistoricoDesde, HistoricoDesde));
+        }
         PrazoInicial = Factory.Services.GetRequiredService<IConfiguration>()
             .GetValue<int>("Expurgo:PrazoRetencaoMeses");
     }

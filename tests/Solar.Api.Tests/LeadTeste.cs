@@ -136,9 +136,9 @@ public class ContratoDoTurnoTeste
     }
 
     [Fact]
-    public void Espelho_tem_7_tipos_e_45_campos_depois_da_flag_de_encaminhamento()
+    public void Espelho_tem_7_tipos_e_46_campos_depois_do_indicador_de_essenciais()
     {
         Assert.Equal(7, Espelho.Length);
-        Assert.Equal(45, Espelho.Sum(tipo => Campos(tipo).Length));
+        Assert.Equal(46, Espelho.Sum(tipo => Campos(tipo).Length));
     }
 }
