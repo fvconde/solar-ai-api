@@ -39,6 +39,18 @@ namespace Solar.Api.Persistencia.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("canal");
 
+                    b.Property<byte[]>("ChaveExclusaoHash")
+                        .HasColumnType("bytea")
+                        .HasColumnName("chave_exclusao_hash");
+
+                    b.Property<Guid?>("ContaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conta_id");
+
+                    b.Property<DateTimeOffset?>("CorretorAtribuidoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("corretor_atribuido_em");
+
                     b.Property<DateTimeOffset>("CriadaEm")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("criada_em");
@@ -48,9 +60,25 @@ namespace Solar.Api.Persistencia.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("desfecho");
 
+                    b.Property<DateTimeOffset?>("EncaminhadaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("encaminhada_em");
+
+                    b.Property<DateTimeOffset?>("EssenciaisEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("essenciais_em");
+
+                    b.Property<DateTimeOffset?>("IntencaoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("intencao_em");
+
                     b.Property<Guid>("LeadId")
                         .HasColumnType("uuid")
                         .HasColumnName("lead_id");
+
+                    b.Property<DateTimeOffset?>("PrimeiroReengajamentoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("primeiro_reengajamento_em");
 
                     b.Property<int>("TentativasReengajamento")
                         .ValueGeneratedOnAdd()
@@ -60,6 +88,9 @@ namespace Solar.Api.Persistencia.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_conversas");
+
+                    b.HasIndex("ContaId")
+                        .HasDatabaseName("ix_conversas_conta_id");
 
                     b.HasIndex("LeadId")
                         .HasDatabaseName("ix_conversas_lead_id");
@@ -73,6 +104,10 @@ namespace Solar.Api.Persistencia.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset?>("AprovadoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("aprovado_em");
+
                     b.Property<bool>("Ativo")
                         .HasColumnType("boolean")
                         .HasColumnName("ativo");
@@ -80,6 +115,10 @@ namespace Solar.Api.Persistencia.Migrations
                     b.Property<DateTimeOffset?>("BloqueadoAte")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("bloqueado_ate");
+
+                    b.Property<DateTimeOffset?>("ConsentimentoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consentimento_em");
 
                     b.Property<string>("ContatoInterno")
                         .IsRequired()
@@ -103,11 +142,10 @@ namespace Solar.Api.Persistencia.Migrations
                         .HasColumnType("character varying(320)")
                         .HasColumnName("email_normalizado");
 
-                    b.Property<string>("Especialidade")
+                    b.PrimitiveCollection<List<string>>("Especialidades")
                         .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("especialidade");
+                        .HasColumnType("text[]")
+                        .HasColumnName("especialidades");
 
                     b.Property<string>("Nome")
                         .IsRequired()
@@ -133,11 +171,26 @@ namespace Solar.Api.Persistencia.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("senha_hash");
 
+                    b.Property<string>("StatusCorretor")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status_corretor");
+
+                    b.Property<string>("Telefone")
+                        .HasMaxLength(11)
+                        .HasColumnType("character varying(11)")
+                        .HasColumnName("telefone");
+
                     b.Property<int>("TentativasSenha")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(0)
                         .HasColumnName("tentativas_senha");
+
+                    b.Property<string>("VersaoAvisoPrivacidade")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("versao_aviso_privacidade");
 
                     b.Property<bool>("VinculoAtivo")
                         .ValueGeneratedOnAdd()
@@ -152,8 +205,13 @@ namespace Solar.Api.Persistencia.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_corretores_email_normalizado");
 
-                    b.HasIndex("Especialidade", "Ativo")
-                        .HasDatabaseName("ix_corretores_especialidade_ativo");
+                    b.HasIndex("Especialidades")
+                        .HasDatabaseName("ix_corretores_especialidades");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Especialidades"), "gin");
+
+                    b.HasIndex("StatusCorretor", "CriadoEm")
+                        .HasDatabaseName("ix_corretores_status_corretor_criado_em");
 
                     b.ToTable("corretores");
                 });
@@ -301,12 +359,10 @@ namespace Solar.Api.Persistencia.Migrations
                         .HasName("pk_leads");
 
                     b.HasIndex("Email")
-                        .IsUnique()
                         .HasDatabaseName("ix_leads_email")
                         .HasFilter("email IS NOT NULL");
 
                     b.HasIndex("Telefone")
-                        .IsUnique()
                         .HasDatabaseName("ix_leads_telefone")
                         .HasFilter("telefone IS NOT NULL");
 
@@ -418,6 +474,25 @@ namespace Solar.Api.Persistencia.Migrations
                     b.ToTable("recuperacoes_senha");
                 });
 
+            modelBuilder.Entity("Solar.Api.Dominio.RegistroMetricas", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("HistoricoDesde")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("historico_desde");
+
+                    b.HasKey("Id")
+                        .HasName("pk_registro_metricas");
+
+                    b.ToTable("registro_metricas", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_registro_metricas_id", "id = 1");
+                        });
+                });
+
             modelBuilder.Entity("Solar.Api.Dominio.SessaoCorretor", b =>
                 {
                     b.Property<Guid>("Id")
@@ -432,6 +507,10 @@ namespace Solar.Api.Persistencia.Migrations
                     b.Property<DateTimeOffset>("CriadaEm")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("criada_em");
+
+                    b.Property<DateTimeOffset>("ExpiraEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expira_em");
 
                     b.Property<DateTimeOffset?>("RevogadaEm")
                         .HasColumnType("timestamp with time zone")
@@ -496,6 +575,12 @@ namespace Solar.Api.Persistencia.Migrations
 
             modelBuilder.Entity("Solar.Api.Dominio.Conversa", b =>
                 {
+                    b.HasOne("Solar.Api.Dominio.Corretor", null)
+                        .WithMany()
+                        .HasForeignKey("ContaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_conversas_corretores_conta_id");
+
                     b.HasOne("Solar.Api.Dominio.Lead", "Lead")
                         .WithMany()
                         .HasForeignKey("LeadId")

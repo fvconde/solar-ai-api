@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Solar.Api.Contracts;
 using Solar.Api.Conversas;
 using Solar.Api.Dominio;
+using Solar.Api.Encaminhamentos;
 using Solar.Api.Persistencia;
 using Solar.Api.Seguranca;
 using Solar.Api.Servicos;
@@ -37,6 +38,7 @@ public class PainelController : ControllerBase
     private readonly IHostEnvironment ambiente;
     private readonly ConversaRepositorio conversas;
     private readonly ILogger<PainelController> logger;
+    private readonly EncaminhamentoRepositorio encaminhamentos;
 
     public PainelController(
         SolarDbContext db,
@@ -47,7 +49,8 @@ public class PainelController : ControllerBase
         TimeProvider timeProvider,
         IHostEnvironment ambiente,
         ConversaRepositorio? conversas = null,
-        ILogger<PainelController>? logger = null)
+        ILogger<PainelController>? logger = null,
+        EncaminhamentoRepositorio? encaminhamentos = null)
     {
         this.db = db;
         this.configuracao = configuracao;
@@ -58,8 +61,10 @@ public class PainelController : ControllerBase
         this.ambiente = ambiente;
         this.conversas = conversas ?? new ConversaRepositorio(db);
         this.logger = logger ?? NullLogger<PainelController>.Instance;
+        this.encaminhamentos = encaminhamentos ?? new EncaminhamentoRepositorio(db);
     }
 
+    [NonAction]
     [HttpPost("identificacao")]
     [AllowAnonymous]
     [ProducesResponseType<IdentificacaoPainelResponse>(StatusCodes.Status200OK)]
@@ -80,6 +85,7 @@ public class PainelController : ControllerBase
         return Ok(new IdentificacaoPainelResponse(cadastrado));
     }
 
+    [NonAction]
     [HttpPost("sessoes")]
     [AllowAnonymous]
     [ProducesResponseType<SessaoPainelResponse>(StatusCodes.Status200OK)]
@@ -168,6 +174,7 @@ public class PainelController : ControllerBase
         }
     }
 
+    [NonAction]
     [HttpGet("sessao")]
     [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
     [ProducesResponseType<SessaoPainelResponse>(StatusCodes.Status200OK)]
@@ -191,7 +198,7 @@ public class PainelController : ControllerBase
             : Ok(ParaContrato(corretor));
     }
 
-    [HttpPost("senha/recuperacoes")]
+    [HttpPost("/api/senha/recuperacoes")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     public async Task<IActionResult> SolicitarRecuperacaoAsync(
@@ -251,7 +258,7 @@ public class PainelController : ControllerBase
         }
     }
 
-    [HttpGet("senha/recuperacoes/{token}")]
+    [HttpGet("/api/senha/recuperacoes/{token}")]
     [AllowAnonymous]
     [ProducesResponseType<RecuperacaoSenhaTokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status410Gone)]
@@ -276,12 +283,12 @@ public class PainelController : ControllerBase
         return Ok(new RecuperacaoSenhaTokenResponse(recuperacao.Corretor.Email));
     }
 
-    [HttpPost("senha")]
+    [HttpPost("/api/senha")]
     [AllowAnonymous]
-    [ProducesResponseType<SessaoPainelResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<SessaoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErroApiResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status410Gone)]
-    public async Task<ActionResult<SessaoPainelResponse>> RedefinirSenhaAsync(
+    public async Task<ActionResult<SessaoResponse>> RedefinirSenhaAsync(
         [FromBody] NovaSenhaPainelRequest? request,
         CancellationToken cancellationToken)
     {
@@ -343,12 +350,134 @@ public class PainelController : ControllerBase
             }
 
             DefinirCookieDeSessao(tokenSessao);
-            return Ok(ParaContrato(corretor));
+        return Ok(await ProjecoesDeConta.ProjetarSessaoAsync(db, corretor, cancellationToken));
         }
         finally
         {
             trava.Release();
         }
+    }
+
+    [HttpGet("corretores/pendentes")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType<IReadOnlyList<CorretorPendente>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<PerfilInsuficientePainelResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<CorretorPendente>>> ListarCorretoresPendentesAsync(
+        CancellationToken cancellationToken)
+    {
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
+        {
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+        if (sessao.Corretor.Perfil != PerfisDoPainel.Supervisor)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse("perfil_insuficiente", PerfisDoPainel.Supervisor));
+        }
+
+        var pendentes = await db.Corretores
+            .AsNoTracking()
+            .Where(c => c.Perfil == PerfisDoPainel.Corretor &&
+                c.StatusCorretor == StatusDoCorretor.EmAnalise && c.Ativo)
+            .OrderBy(c => c.CriadoEm)
+            .ThenBy(c => c.Id)
+            .ToListAsync(cancellationToken);
+
+        return Ok(pendentes.Select(c => new CorretorPendente(
+            c.Id,
+            c.Nome,
+            c.Email,
+            c.Telefone ?? string.Empty,
+            c.Regioes,
+            c.Especialidades,
+            c.CriadoEm)).ToArray());
+    }
+
+    [HttpPost("corretores/{id:guid}/aprovacao")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<PerfilInsuficientePainelResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> AprovarCorretorAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
+        {
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+        if (sessao.Corretor.Perfil != PerfisDoPainel.Supervisor)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse("perfil_insuficiente", PerfisDoPainel.Supervisor));
+        }
+
+        var corretor = await db.Corretores.SingleOrDefaultAsync(c =>
+            c.Id == id && c.Perfil == PerfisDoPainel.Corretor &&
+            c.StatusCorretor == StatusDoCorretor.EmAnalise && c.Ativo,
+            cancellationToken);
+        if (corretor is null)
+        {
+            return NotFound(new ErroPainelResponse("corretor_nao_encontrado"));
+        }
+
+        corretor.Aprovar(timeProvider.GetUtcNow());
+        await db.SaveChangesAsync(cancellationToken);
+        await enviadorEmail.EnviarAprovacaoAsync(
+            corretor.Id, corretor.Email, corretor.Nome, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("corretores/{id:guid}/recusa")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidacaoResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<PerfilInsuficientePainelResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> RecusarCorretorAsync(
+        Guid id,
+        [FromBody] RecusaCorretorRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
+        {
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+        if (sessao.Corretor.Perfil != PerfisDoPainel.Supervisor)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse("perfil_insuficiente", PerfisDoPainel.Supervisor));
+        }
+        if (request?.Motivo?.Length > 500)
+        {
+            return BadRequest(new ValidacaoResponse(
+                "validacao", new Dictionary<string, string> { ["motivo"] = "longo" }));
+        }
+
+        var corretor = await db.Corretores.SingleOrDefaultAsync(c =>
+            c.Id == id && c.Perfil == PerfisDoPainel.Corretor &&
+            c.StatusCorretor == StatusDoCorretor.EmAnalise && c.Ativo,
+            cancellationToken);
+        if (corretor is null)
+        {
+            return NotFound(new ErroPainelResponse("corretor_nao_encontrado"));
+        }
+
+        var email = corretor.Email;
+        var nome = corretor.Nome;
+        var motivo = string.IsNullOrWhiteSpace(request?.Motivo) ? null : request.Motivo.Trim();
+        await using var transacao = await db.Database.BeginTransactionAsync(cancellationToken);
+        await encaminhamentos.RedistribuirAsync(corretor.Id, timeProvider.GetUtcNow(), cancellationToken);
+        db.Corretores.Remove(corretor);
+        await db.SaveChangesAsync(cancellationToken);
+        await transacao.CommitAsync(cancellationToken);
+
+        await enviadorEmail.EnviarRecusaAsync(id, email, nome, motivo, cancellationToken);
+        return NoContent();
     }
 
     [HttpGet("leads")]
@@ -365,6 +494,21 @@ public class PainelController : ControllerBase
         if (sessao is null)
         {
             return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Cliente)
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse(
+                    "perfil_insuficiente",
+                    PerfisDoPainel.Corretor));
+        }
+
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Corretor &&
+            sessao.Corretor.StatusCorretor == StatusDoCorretor.EmAnalise)
+        {
+            return Ok(new FilaLeadsResponse([], 0));
         }
 
         var filtroEfetivo = string.IsNullOrWhiteSpace(filtro)
@@ -408,20 +552,14 @@ public class PainelController : ControllerBase
             .Where(e => leadIds.Contains(e.LeadId))
             .ToListAsync(cancellationToken);
 
-        var encaminhamentoPorLead = encaminhamentos
-            .GroupBy(e => e.LeadId)
-            .ToDictionary(
-                grupo => grupo.Key,
-                grupo => grupo
-                    .OrderByDescending(e => e.Em)
-                    .ThenByDescending(e => e.Id)
-                    .First());
+        var encaminhamentoPorLead = RegrasDaFilaDeLeads.SelecionarUltimoEncaminhamentoPorLead(
+            encaminhamentos);
 
         var autorizados = leadsList
             .Where(lead =>
             {
                 encaminhamentoPorLead.TryGetValue(lead.Id, out var encaminhamento);
-                return PertenceAoFiltro(
+                return RegrasDaFilaDeLeads.PertenceAoFiltro(
                     lead,
                     encaminhamento,
                     filtroEfetivo,
@@ -453,6 +591,64 @@ public class PainelController : ControllerBase
         return Ok(new FilaLeadsResponse(itens, itens.Count));
     }
 
+    [HttpGet("metricas")]
+    [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
+    [ProducesResponseType<MetricasPainelResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErroPainelResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<PerfilInsuficientePainelResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<MetricasPainelResponse>> ObterMetricasAsync(
+        CancellationToken cancellationToken,
+        [FromQuery] int dias = 30)
+    {
+        var sessao = await ObterSessaoPainelAsync(cancellationToken);
+        if (sessao is null)
+        {
+            return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Cliente)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new PerfilInsuficientePainelResponse("perfil_insuficiente", PerfisDoPainel.Corretor));
+        }
+
+        if (dias is < 1 or > 365)
+        {
+            return BadRequest(new ErroPainelResponse("periodo_invalido"));
+        }
+
+        var agora = timeProvider.GetUtcNow();
+        var prazoRetencaoMeses = configuracao.GetValue("Expurgo:PrazoRetencaoMeses", 12);
+        if (prazoRetencaoMeses <= 0)
+        {
+            throw new InvalidOperationException("Expurgo:PrazoRetencaoMeses deve ser positivo.");
+        }
+
+        var janelaRespostaFollowUpDias = configuracao.GetValue("Metricas:JanelaRespostaFollowUpDias", 7);
+        if (janelaRespostaFollowUpDias <= 0)
+        {
+            throw new InvalidOperationException("Metricas:JanelaRespostaFollowUpDias deve ser positivo.");
+        }
+
+        var historicoDesde = await db.RegistroMetricas
+            .AsNoTracking()
+            .Where(r => r.Id == 1)
+            .Select(r => r.HistoricoDesde)
+            .SingleAsync(cancellationToken);
+
+        var periodo = new PeriodoMetricasPainel(dias, agora.AddDays(-dias), agora, historicoDesde);
+
+        var supervisor = sessao.Corretor.Perfil == PerfisDoPainel.Supervisor;
+        if (!supervisor && sessao.Corretor.StatusCorretor == StatusDoCorretor.EmAnalise)
+        {
+            return Ok(ConsultaDeMetricasDoPainel.Vazia(periodo, prazoRetencaoMeses, supervisor, janelaRespostaFollowUpDias));
+        }
+
+        return Ok(await ConsultaDeMetricasDoPainel.ObterAsync(
+            db, sessao.CorretorId, supervisor, periodo, prazoRetencaoMeses, janelaRespostaFollowUpDias, cancellationToken));
+    }
+
     [HttpGet("leads/{id:guid}")]
     [Authorize(AuthenticationSchemes = CorretorAuthenticationDefaults.AuthenticationScheme)]
     [ProducesResponseType<DetalheLeadPainelResponse>(StatusCodes.Status200OK)]
@@ -466,6 +662,12 @@ public class PainelController : ControllerBase
         if (sessao is null)
         {
             return Unauthorized(new ErroPainelResponse("sessao_invalida"));
+        }
+
+        if (sessao.Corretor.Perfil == PerfisDoPainel.Corretor &&
+            sessao.Corretor.StatusCorretor == StatusDoCorretor.EmAnalise)
+        {
+            return NotFound(new ErroPainelResponse("lead_nao_encontrado"));
         }
 
         var lead = await db.Leads
@@ -618,7 +820,7 @@ public class PainelController : ControllerBase
                 SameSite = SameSiteMode.Strict,
                 Path = "/",
                 Secure = !ambiente.IsDevelopment(),
-                MaxAge = TimeSpan.FromDays(3650),
+            MaxAge = TimeSpan.FromDays(30),
             });
     }
 
@@ -682,24 +884,6 @@ public class PainelController : ControllerBase
         return corretor.VinculoAtivo
             ? (new[] { "minha_fila", "sem_corretor", "visao_geral" }, "minha_fila")
             : (new[] { "sem_corretor", "visao_geral" }, "sem_corretor");
-    }
-
-    private static bool PertenceAoFiltro(
-        Lead lead,
-        Encaminhamento? encaminhamento,
-        string filtro,
-        Guid? corretorId)
-    {
-        return filtro switch
-        {
-            "meus_leads" or "minha_fila" =>
-                corretorId is not null && encaminhamento?.CorretorId == corretorId,
-            "sem_corretor" =>
-                (lead.Status == StatusDoLead.Novo && encaminhamento is null) ||
-                encaminhamento?.CorretorId is null,
-            "visao_geral" => true,
-            _ => false,
-        };
     }
 
     private static string ReferenciaDo(Guid id) =>

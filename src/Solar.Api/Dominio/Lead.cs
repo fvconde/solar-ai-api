@@ -73,6 +73,27 @@ public sealed class Lead
         AtualizadoEm = em,
     };
 
+    public Lead Clonar(DateTimeOffset em) => new()
+    {
+        Id = Guid.CreateVersion7(em),
+        Nome = Nome,
+        Telefone = Telefone,
+        Email = Email,
+        Status = Status,
+        Intencao = Intencao,
+        PrecoMin = PrecoMin,
+        PrecoMax = PrecoMax,
+        Quartos = Quartos,
+        Regiao = Regiao,
+        Urgencia = Urgencia,
+        ExpectativaRetorno = ExpectativaRetorno,
+        Score = Score,
+        CriadoEm = em,
+        AtualizadoEm = em,
+        ConsentimentoEm = ConsentimentoEm,
+        VersaoAvisoPrivacidade = VersaoAvisoPrivacidade,
+    };
+
     /// <summary>
     /// Aplica o que o turno acrescentou. Campo nulo em <paramref name="extraidos"/>
     /// significa "nao mencionado agora" e nao apaga o que ja se sabia; intencao

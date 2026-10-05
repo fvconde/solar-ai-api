@@ -26,6 +26,10 @@ public sealed class Conversa
 
     public Guid LeadId { get; private set; }
 
+    public Guid? ContaId { get; private set; }
+
+    public byte[]? ChaveExclusaoHash { get; private set; }
+
     public Lead Lead { get; private set; } = null!;
 
     public DateTimeOffset CriadaEm { get; private set; }
@@ -35,6 +39,16 @@ public sealed class Conversa
     public int TentativasReengajamento { get; private set; }
 
     public string? Desfecho { get; private set; }
+
+    public DateTimeOffset? IntencaoEm { get; private set; }
+
+    public DateTimeOffset? EssenciaisEm { get; private set; }
+
+    public DateTimeOffset? EncaminhadaEm { get; private set; }
+
+    public DateTimeOffset? CorretorAtribuidoEm { get; private set; }
+
+    public DateTimeOffset? PrimeiroReengajamentoEm { get; private set; }
 
     public IReadOnlyList<Mensagem> Mensagens => _mensagens;
 
@@ -62,6 +76,10 @@ public sealed class Conversa
         LeadId = canonico.Id;
     }
 
+    public void VincularConta(Guid contaId) => ContaId = contaId;
+
+    public void DefinirChaveExclusaoHash(byte[] hash) => ChaveExclusaoHash = hash;
+
     /// <summary>
     /// Grava as duas falas do turno e funde o perfil. So roda depois de o agente
     /// ter respondido: turno que falha nao deixa rastro.
@@ -72,6 +90,21 @@ public sealed class Conversa
         _mensagens.Add(Mensagem.DaLia(Id, turno.Resposta, turno.ProximaAcao, em, turno.ImoveisSugeridos));
 
         Lead.Fundir(turno.Intencao, turno.CamposExtraidos, em);
+
+        if (Lead.Intencao is Intencoes.Compra or Intencoes.Aluguel or Intencoes.Investimento)
+        {
+            IntencaoEm ??= em;
+        }
+
+        if (turno.EssenciaisCompletos)
+        {
+            EssenciaisEm ??= em;
+        }
+
+        if (turno.ProximaAcao is ProximasAcoes.AgendarReuniao or ProximasAcoes.DirecionarEspecialista)
+        {
+            EncaminhadaEm ??= em;
+        }
 
         if (turno.ProximaAcao == "encerrar" || turno.ProximaAcao == "agendar_reuniao" || turno.ProximaAcao == "direcionar_especialista")
         {
@@ -85,6 +118,8 @@ public sealed class Conversa
     {
         _mensagens.Add(Mensagem.DaLia(Id, turno.Resposta, turno.ProximaAcao, em, turno.ImoveisSugeridos));
 
+        PrimeiroReengajamentoEm ??= em;
+
         TentativasReengajamento++;
 
         if (turno.ProximaAcao == "encerrar" || turno.ProximaAcao == "agendar_reuniao" || turno.ProximaAcao == "direcionar_especialista")
@@ -93,6 +128,11 @@ public sealed class Conversa
         }
 
         AtualizadaEm = em;
+    }
+
+    public void RegistrarCorretorAtribuido(DateTimeOffset em)
+    {
+        CorretorAtribuidoEm ??= em;
     }
 
     public void DefinirDesfecho(string desfecho)
