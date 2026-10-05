@@ -1,14 +1,17 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Solar.Api.Contracts;
 using Solar.Api.Conversas;
 using Solar.Api.Dominio;
 using Solar.Api.Encaminhamentos;
 using Solar.Api.Persistencia;
 using Solar.Api.Seguranca;
+using Solar.Api.Servicos;
 
 namespace Solar.Api.Tests;
 
@@ -436,6 +439,153 @@ public sealed class RedistribuicaoAutoexclusaoPostgresTeste : IAsyncLifetime
             Assert.Equal(metricasAntes.Avanco[i].Etapa, metricasDepois.Avanco[i].Etapa);
             Assert.Equal(metricasAntes.Avanco[i].Conversas, metricasDepois.Avanco[i].Conversas);
             Assert.Equal(metricasAntes.Avanco[i].SemEssenciais, metricasDepois.Avanco[i].SemEssenciais);
+        }
+    }
+
+    [Fact]
+    public async Task Supervisor_recusa_corretor_com_encaminhamento_redistribui_sem_regressao()
+    {
+        await DesativarCorretoresSeedAsync();
+
+        var agora = MetricasPainelPostgresFixture.Agora;
+        var tCriadoA = agora.AddDays(-20);
+        var tCriadoB = agora.AddDays(-10);
+        var tSupervisor = agora.AddDays(-25);
+        var tConversa = agora.AddDays(-5);
+        var tTurno = agora.AddDays(-4);
+        var regiao = $"regiao{Guid.NewGuid():N}";
+
+        var supervisor = CriarSupervisor(tSupervisor);
+
+        var emailA = $"corretor-recusa-{Guid.NewGuid():N}@tests.solar.local";
+        var corretorA = Corretor.NovaConta(
+            nome: "Corretor A Em Analise",
+            email: emailA,
+            emailNormalizado: emailA.ToLowerInvariant(),
+            telefone: "11987654321",
+            senhaHash: "hash-teste",
+            perfil: PerfisDoPainel.Corretor,
+            regioes: [regiao],
+            especialidades: [Especialidades.Moradia],
+            versaoAvisoPrivacidade: AvisoPrivacidade.VersaoAtual,
+            em: tCriadoA);
+
+        var corretorB = CriarCorretor("Corretor B", regiao, tCriadoB);
+
+        var conversa = Conversa.Nova(Guid.NewGuid(), Canais.Web, tConversa);
+        conversa.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, tConversa);
+        conversa.RegistrarTurno(
+            "Gostaria de atendimento",
+            new TurnoResponse(
+                Resposta: "Atendimento iniciado",
+                Intencao: Intencoes.Compra,
+                CamposExtraidos: new CamposExtraidos(Regiao: regiao),
+                ProximaAcao: ProximasAcoes.AgendarReuniao,
+                ImoveisSugeridos: [],
+                SlotEscolhido: null,
+                EssenciaisCompletos: true),
+            tTurno);
+        conversa.RegistrarCorretorAtribuido(tTurno);
+        var marcoAtribuidoAntes = conversa.CorretorAtribuidoEm;
+        Assert.NotNull(marcoAtribuidoAntes);
+
+        var encaminhamento = Encaminhamento.Novo(
+            conversa.Id,
+            conversa.LeadId,
+            corretorA.Id,
+            Especialidades.Moradia,
+            tTurno);
+
+        await using (var scope = _fixture.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
+            db.Corretores.AddRange(supervisor, corretorA, corretorB);
+            db.Conversas.Add(conversa);
+            db.Encaminhamentos.Add(encaminhamento);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var scopeAntes = _fixture.Factory.Services.CreateAsyncScope())
+        {
+            var dbAntes = scopeAntes.ServiceProvider.GetRequiredService<SolarDbContext>();
+            var corretorABanco = await dbAntes.Corretores.SingleAsync(c => c.Id == corretorA.Id);
+            Assert.Equal(StatusDoCorretor.EmAnalise, corretorABanco.StatusCorretor);
+            Assert.True(corretorABanco.Ativo);
+        }
+
+        var tokenSupervisor = await CriarSessaoAsync(supervisor);
+        var tokenA = await CriarSessaoAsync(corretorA);
+
+        var fakeEmail = new EnviadorFake();
+        using var host = _fixture.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IEnviadorEmail>();
+            services.AddSingleton<IEnviadorEmail>(fakeEmail);
+        }));
+
+        using var clientSupervisor = host.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        clientSupervisor.DefaultRequestHeaders.Add("Cookie", $"{CorretorAuthenticationDefaults.CookieName}={tokenSupervisor}");
+
+        using var clientA = host.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        clientA.DefaultRequestHeaders.Add("Cookie", $"{CorretorAuthenticationDefaults.CookieName}={tokenA}");
+
+        const string motivo = "Documentação incompleta";
+        using var resposta = await clientSupervisor.PostAsJsonAsync(
+            $"/api/painel/corretores/{corretorA.Id:D}/recusa",
+            new { motivo });
+        Assert.Equal(HttpStatusCode.NoContent, resposta.StatusCode);
+
+        using var sessaoA = await clientA.GetAsync("/api/sessao");
+        Assert.Equal(HttpStatusCode.Unauthorized, sessaoA.StatusCode);
+
+        await using (var scopeDepois = _fixture.Factory.Services.CreateAsyncScope())
+        {
+            var dbDepois = scopeDepois.ServiceProvider.GetRequiredService<SolarDbContext>();
+
+            Assert.False(await dbDepois.Corretores.AnyAsync(c => c.Id == corretorA.Id));
+            Assert.False(await dbDepois.Sessoes.AnyAsync(s => s.CorretorId == corretorA.Id));
+
+            var encDepois = await dbDepois.Encaminhamentos.SingleAsync(e => e.Id == encaminhamento.Id);
+            Assert.Equal(corretorB.Id, encDepois.CorretorId);
+            Assert.Equal(StatusDoEncaminhamento.Atribuido, encDepois.Status);
+
+            var conversaDepois = await dbDepois.Conversas.SingleAsync(c => c.Id == conversa.Id);
+            Assert.Equal(marcoAtribuidoAntes, conversaDepois.CorretorAtribuidoEm);
+        }
+
+        var recusa = Assert.Single(fakeEmail.Recusas);
+        Assert.Equal(corretorA.Id, recusa.ContaId);
+        Assert.Equal(corretorA.Email, recusa.Email);
+        Assert.Equal(corretorA.Nome, recusa.Nome);
+        Assert.Equal(motivo, recusa.Motivo);
+    }
+
+    private sealed record MensagemRecusaEmail(Guid ContaId, string Email, string Nome, string? Motivo = null);
+
+    private sealed class EnviadorFake : IEnviadorEmail
+    {
+        public List<MensagemRecusaEmail> Recusas { get; } = [];
+
+        public Task EnviarLinkRecuperacaoAsync(
+            string destinatario,
+            string link,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task EnviarAprovacaoAsync(
+            Guid contaId,
+            string destinatario,
+            string nome,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task EnviarRecusaAsync(
+            Guid contaId,
+            string destinatario,
+            string nome,
+            string? motivo,
+            CancellationToken cancellationToken = default)
+        {
+            Recusas.Add(new MensagemRecusaEmail(contaId, destinatario, nome, motivo));
+            return Task.CompletedTask;
         }
     }
 }
