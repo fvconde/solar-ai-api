@@ -69,6 +69,7 @@ public sealed class AutenticacaoPainelPostgresTeste
         var login = await controller.CriarSessaoAsync(
             new SessaoPainelRequest(email, "senha-antiga"), default);
         Assert.IsType<OkObjectResult>(login.Result);
+        var sessaoAnteriorId = (await db.Sessoes.SingleAsync(s => s.CorretorId == id)).Id;
 
         var pedido = await controller.SolicitarRecuperacaoAsync(
             new RecuperacaoSenhaRequest(email), default);
@@ -100,11 +101,12 @@ public sealed class AutenticacaoPainelPostgresTeste
 
         var sessoes = await db.Sessoes
             .Where(s => s.CorretorId == id)
-            .OrderBy(s => s.CriadaEm)
             .ToListAsync();
         Assert.Equal(2, sessoes.Count);
-        Assert.NotNull(sessoes[0].RevogadaEm);
-        Assert.Null(sessoes[1].RevogadaEm);
+        var sessaoRevogada = Assert.Single(sessoes, s => s.RevogadaEm is not null);
+        var sessaoAtual = Assert.Single(sessoes, s => s.RevogadaEm is null);
+        Assert.Equal(sessaoAnteriorId, sessaoRevogada.Id);
+        Assert.NotEqual(sessaoAnteriorId, sessaoAtual.Id);
 
         var depoisDoUso = await controller.ValidarRecuperacaoAsync(token, default);
         var expirado = Assert.IsType<StatusCodeResult>(depoisDoUso.Result);

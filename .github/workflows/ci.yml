@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build e Testes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: solar_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restaurar dependências
+        run: dotnet restore Solar.sln
+
+      - name: Compilar solução
+        run: dotnet build Solar.sln --no-restore --configuration Release
+
+      - name: Executar testes
+        env:
+          ConnectionStrings__PostgresTest: Host=localhost;Port=5432;Database=solar_test;Username=postgres;Password=postgres
+        run: dotnet test Solar.sln --no-build --configuration Release
