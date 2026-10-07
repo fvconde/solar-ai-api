@@ -7,15 +7,15 @@ namespace Solar.Api.Agendamentos;
 /// <summary>Garante agenda futura relativa ao boot, sem datas vencidas em migration.</summary>
 public static class AgendaInicial
 {
-    private const int QuantidadePadrao = 6;
+    private const int QuantidadePadrao = 9;
 
     private static readonly TimeSpan HorarioDeSaoPaulo = TimeSpan.FromHours(-3);
 
     private static readonly TimeOnly[] Horarios =
     [
         new(9, 0),
-        new(11, 0),
-        new(15, 0),
+        new(14, 0),
+        new(19, 0),
     ];
 
     public static async Task GarantirAsync(WebApplication app)
@@ -30,12 +30,37 @@ public static class AgendaInicial
         await GarantirAsync(db, DateTimeOffset.UtcNow, quantidade);
     }
 
-    internal static async Task GarantirAsync(
+    public static async Task GarantirAsync(
         SolarDbContext db,
         DateTimeOffset agora,
         int quantidade,
         CancellationToken cancellationToken = default)
     {
+        var agoraUtc = agora.ToUniversalTime();
+
+        var candidatosParaLimpeza = await db.Slots
+            .Where(slot => slot.Inicio > agoraUtc && slot.LeadId == null)
+            .Select(slot => new { slot.Id, slot.Inicio })
+            .ToListAsync(cancellationToken);
+
+        var idsInvalidos = candidatosParaLimpeza
+            .Where(slot =>
+            {
+                var hora = slot.Inicio.ToOffset(HorarioDeSaoPaulo).TimeOfDay;
+                return hora != new TimeSpan(9, 0, 0)
+                    && hora != new TimeSpan(14, 0, 0)
+                    && hora != new TimeSpan(19, 0, 0);
+            })
+            .Select(slot => slot.Id)
+            .ToList();
+
+        if (idsInvalidos.Count > 0)
+        {
+            await db.Slots
+                .Where(slot => idsInvalidos.Contains(slot.Id) && slot.Inicio > agoraUtc && slot.LeadId == null)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+
         var corretores = await db.Corretores
             .Where(corretor => corretor.Ativo)
             .Select(corretor => corretor.Id)
@@ -44,14 +69,14 @@ public static class AgendaInicial
         foreach (var corretorId in corretores)
         {
             var existentes = await db.Slots
-                .Where(slot => slot.CorretorId == corretorId && slot.Inicio > agora)
+                .Where(slot => slot.CorretorId == corretorId && slot.Inicio > agoraUtc)
                 .Select(slot => new { slot.Inicio, slot.LeadId })
                 .ToListAsync(cancellationToken);
 
             var inicios = existentes.Select(slot => slot.Inicio).ToHashSet();
             var livres = existentes.Count(slot => slot.LeadId is null);
 
-            foreach (var horario in ProximosHorarios(agora))
+            foreach (var horario in ProximosHorarios(agoraUtc))
             {
                 if (livres >= quantidade)
                 {
