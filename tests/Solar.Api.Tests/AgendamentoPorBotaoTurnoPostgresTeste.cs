@@ -59,7 +59,6 @@ public sealed class AgendamentoPorBotaoTurnoPostgresTeste
         {
             var travas = new TravaDeConversas();
 
-            // 1. Reservar pela rota de botão e encerrar o contexto da reserva
             await using (var dbReserva = await PostgresTestDatabase.CriarContextoAsync())
             {
                 var controllerReserva = CriarController(dbReserva, travas, new CapturadorTurnoHandler());
@@ -71,7 +70,6 @@ public sealed class AgendamentoPorBotaoTurnoPostgresTeste
                 Assert.Equal(EstadosDoAgendamento.Confirmado, agendamento.Estado);
             }
 
-            // 2. Em contexto NOVO, enviar nova mensagem pelo Enviar
             var handlerTurno = new CapturadorTurnoHandler();
 
             await using (var dbNovo = await PostgresTestDatabase.CriarContextoAsync())
@@ -85,12 +83,10 @@ public sealed class AgendamentoPorBotaoTurnoPostgresTeste
                 Assert.NotNull(mensagemResp);
             }
 
-            // Asserts na captura do agente
             Assert.Equal(1, handlerTurno.Chamadas);
             Assert.NotNull(handlerTurno.UltimoTurnoRequest);
             Assert.True(handlerTurno.UltimoTurnoRequest.VisitaConfirmada);
 
-            // Verificação em outro contexto
             await using var verificacao = await PostgresTestDatabase.CriarContextoAsync();
 
             var slot1Salvo = await verificacao.Slots.SingleAsync(s => s.Id == slot1.Id);
