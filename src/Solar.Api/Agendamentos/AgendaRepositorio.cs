@@ -27,6 +27,16 @@ public sealed class AgendaRepositorio(SolarDbContext db)
         return await OfertarDoCorretorAsync(corretorId.Value, agora, cancellationToken);
     }
 
+    public async Task<bool> TemAgendamentoConfirmadoAsync(
+        Guid conversaId,
+        CancellationToken cancellationToken) =>
+        await db.Mensagens
+            .AnyAsync(
+                mensagem =>
+                    mensagem.ConversaId == conversaId &&
+                    mensagem.StatusAgendamento == EstadosDoAgendamento.Confirmado,
+                cancellationToken);
+
     internal async Task<AgendamentoDaConversa?> ReservarAsync(
         Guid conversaId,
         Guid leadId,

@@ -214,10 +214,13 @@ public class ConversasController(
             return Problem(statusCode: StatusCodes.Status400BadRequest, title: "informe telefone ou e-mail");
         }
 
+        var agora = DateTimeOffset.UtcNow;
         var leadId = await conversas.RegistrarContatoAsync(
-            conversa, requisicao, DateTimeOffset.UtcNow, cancellationToken);
+            conversa, requisicao, agora, cancellationToken);
 
-        return Ok(new ContatoResponse(leadId));
+        var oferta = await OfertarAgendamentoAsync(conversa, agora, cancellationToken);
+
+        return Ok(new ContatoResponse(leadId, oferta));
     }
 
     /// <summary>Devolve o historico completo e o perfil acumulado da conversa.</summary>
@@ -238,10 +241,12 @@ public class ConversasController(
             return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
         }
 
+        var agora = DateTimeOffset.UtcNow;
         var corretor = await encaminhamentos.CorretorDaConversaAsync(id, cancellationToken);
-        var agendaAtual = await agenda.OfertarAsync(id, DateTimeOffset.UtcNow, cancellationToken);
+        var agendaAtual = await agenda.OfertarAsync(id, agora, cancellationToken);
         var mensagens = await conversas.HistoricoCompletoAsync(
             id, corretor, agendaAtual, cancellationToken);
+        var oferta = await OfertarAgendamentoAsync(conversa, agora, cancellationToken);
 
         return Ok(new ConversaResponse(
             id,
@@ -249,7 +254,8 @@ public class ConversasController(
             mensagens,
             !conversa.Lead.TemContato,
             conversa.Lead.ConsentimentoEm,
-            conversa.Lead.VersaoAvisoPrivacidade));
+            conversa.Lead.VersaoAvisoPrivacidade,
+            oferta));
     }
 
     /// <summary>
@@ -395,4 +401,22 @@ public class ConversasController(
 
     private bool PodeAcessar(Conversa conversa) =>
         conversa.ContaId is null || ContaAutenticada() == conversa.ContaId;
+
+    private async Task<IReadOnlyList<SlotOferecido>> OfertarAgendamentoAsync(
+        Conversa conversa,
+        DateTimeOffset agora,
+        CancellationToken cancellationToken)
+    {
+        if (!conversa.Lead.TemContato)
+        {
+            return [];
+        }
+
+        if (await agenda.TemAgendamentoConfirmadoAsync(conversa.Id, cancellationToken))
+        {
+            return [];
+        }
+
+        return await agenda.OfertarAsync(conversa.Id, agora, cancellationToken);
+    }
 }
