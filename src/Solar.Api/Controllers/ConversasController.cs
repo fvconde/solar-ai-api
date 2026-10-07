@@ -133,7 +133,7 @@ public class ConversasController(
             conversa.Lead.ParaContrato(),
             horariosOferecidos,
             conversa.Lead.TemContato,
-            conversa.Mensagens.Any(m => m.StatusAgendamento == EstadosDoAgendamento.Confirmado));
+            await agenda.TemAgendamentoConfirmadoAsync(id, cancellationToken));
 
         var inicio = Stopwatch.GetTimestamp();
         TurnoResponse resposta;
