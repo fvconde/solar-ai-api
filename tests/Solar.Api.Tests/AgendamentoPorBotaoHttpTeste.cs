@@ -177,7 +177,7 @@ public sealed class AgendamentoPorBotaoHttpTeste(HttpAgendamentoFixture fixture)
             Assert.NotNull(detalhe.Encaminhamento);
             Assert.Equal(corretor.Id, detalhe.Encaminhamento.Corretor!.Id);
             Assert.Equal(corretor.Nome, detalhe.Encaminhamento.Corretor.Nome);
-            Assert.Contains(detalhe.Transcricao, t => t.Texto.Contains($"Combinado! {corretor.Nome} vai te chamar no contato que você deixou."));
+            Assert.Contains(detalhe.Transcricao, t => t.Texto.Contains($"Combinado! {corretor.Nome} vai te chamar no contato que você forneceu no horário agendado."));
             Assert.Contains(detalhe.Transcricao, t => t.Texto == msgLead.Texto);
 
             await using (var scope = fixture.Factory.Services.CreateAsyncScope())

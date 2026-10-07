@@ -66,7 +66,7 @@ public sealed class GravacaoDoTurno(SolarDbContext db, AgendaRepositorio agenda)
 
         var textoLead = FormatarMensagemDoLead(horario.Inicio);
         var turno = new TurnoResponse(
-            $"Combinado! {corretor} vai te chamar no contato que você deixou.",
+            $"Combinado! {corretor} vai te chamar no contato que você forneceu no horário agendado.",
             conversa.Lead.Intencao ?? Intencoes.Indefinida,
             new CamposExtraidos(),
             ProximasAcoes.AgendarReuniao,

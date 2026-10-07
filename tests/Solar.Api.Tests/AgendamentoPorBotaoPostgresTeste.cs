@@ -102,7 +102,7 @@ public sealed class AgendamentoPorBotaoPostgresTeste
 
             var msgLia = mensagens[1];
             Assert.Equal(Papeis.Agente, msgLia.Papel);
-            Assert.Equal($"Combinado! {corretor.Nome} vai te chamar no contato que você deixou.", msgLia.Texto);
+            Assert.Equal($"Combinado! {corretor.Nome} vai te chamar no contato que você forneceu no horário agendado.", msgLia.Texto);
             Assert.Equal(ProximasAcoes.AgendarReuniao, msgLia.ProximaAcao);
             Assert.Equal(EstadosDoAgendamento.Confirmado, msgLia.StatusAgendamento);
             Assert.Equal(slot.Id, msgLia.SlotId);
