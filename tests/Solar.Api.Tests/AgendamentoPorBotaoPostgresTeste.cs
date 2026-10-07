@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -30,8 +31,18 @@ public sealed class AgendamentoPorBotaoPostgresTeste
         Guid leadId;
         var corretor = CriarCorretor(agora);
 
-        var inicioSaoPaulo = new DateTimeOffset(2026, 10, 7, 14, 0, 0, TimeSpan.FromHours(-3));
+        var fusoSaoPaulo = TimeSpan.FromHours(-3);
+        var agoraSp = agora.ToOffset(fusoSaoPaulo);
+        var dataAlvoSp = agoraSp.Date.AddDays(2);
+        var inicioSaoPaulo = new DateTimeOffset(dataAlvoSp.Year, dataAlvoSp.Month, dataAlvoSp.Day, 14, 0, 0, fusoSaoPaulo);
         var slot = Slot.Novo(corretor.Id, inicioSaoPaulo.ToUniversalTime(), inicioSaoPaulo.AddHours(1).ToUniversalTime());
+
+        var cultura = new CultureInfo("pt-BR");
+        var nomeDiaSemana = inicioSaoPaulo.ToString("dddd", cultura);
+        nomeDiaSemana = nomeDiaSemana.Replace("-feira", "", StringComparison.OrdinalIgnoreCase);
+        nomeDiaSemana = char.ToUpper(nomeDiaSemana[0], cultura) + nomeDiaSemana[1..];
+        var nomeMes = inicioSaoPaulo.ToString("MMMM", cultura);
+        var textoEsperadoLead = $"{nomeDiaSemana}, {inicioSaoPaulo.Day} de {nomeMes} às 14h";
 
         await using (var preparacao = await PostgresTestDatabase.CriarContextoAsync())
         {
@@ -81,7 +92,11 @@ public sealed class AgendamentoPorBotaoPostgresTeste
 
             var msgLead = mensagens[0];
             Assert.Equal(Papeis.Lead, msgLead.Papel);
-            Assert.Equal("Quarta, 7 de outubro às 14h", msgLead.Texto);
+            Assert.Equal(textoEsperadoLead, msgLead.Texto);
+            Assert.Contains("às 14h", msgLead.Texto);
+            Assert.Contains(nomeMes, msgLead.Texto);
+            Assert.Contains(inicioSaoPaulo.Day.ToString(), msgLead.Texto);
+            Assert.StartsWith(nomeDiaSemana, msgLead.Texto);
             Assert.Null(msgLead.StatusAgendamento);
             Assert.Null(msgLead.SlotId);
 
@@ -232,11 +247,106 @@ public sealed class AgendamentoPorBotaoPostgresTeste
             var objVencido = Assert.IsType<ObjectResult>(resVencido.Result);
             Assert.Equal(StatusCodes.Status409Conflict, objVencido.StatusCode);
             var problemVencido = Assert.IsType<ProblemDetails>(objVencido.Value);
+            Assert.Equal("horario indisponivel", problemVencido.Title);
+            Assert.Equal("about:blank", problemVencido.Type);
+            Assert.Equal(StatusCodes.Status409Conflict, problemVencido.Status);
             Assert.Equal("horario_indisponivel", problemVencido.Extensions["codigo"]);
+            var ofertaVencido = Assert.IsAssignableFrom<IReadOnlyList<SlotOferecido>>(problemVencido.Extensions["oferta"]);
+            Assert.Single(ofertaVencido);
+            Assert.Equal(slotAlternativa.Id, ofertaVencido[0].Id);
 
             await using var verificacao = await PostgresTestDatabase.CriarContextoAsync();
             var slotReservadoVerif = await verificacao.Slots.SingleAsync(s => s.Id == slotReservado.Id);
             Assert.Equal(outroLead.Id, slotReservadoVerif.LeadId);
+
+            var totalMensagens = await verificacao.Mensagens.CountAsync(m => m.ConversaId == conversaId);
+            Assert.Equal(0, totalMensagens);
+        }
+        finally
+        {
+            await using var limpeza = await PostgresTestDatabase.CriarContextoAsync();
+            await limpeza.Slots.Where(s => s.CorretorId == corretor.Id).ExecuteDeleteAsync();
+            await limpeza.Mensagens.Where(m => m.ConversaId == conversaId).ExecuteDeleteAsync();
+            await limpeza.Encaminhamentos.Where(e => e.ConversaId == conversaId).ExecuteDeleteAsync();
+            await limpeza.Conversas.Where(c => c.Id == conversaId).ExecuteDeleteAsync();
+            var leadIds = new[] { leadId, outroLead.Id };
+            await limpeza.Leads.Where(l => leadIds.Contains(l.Id)).ExecuteDeleteAsync();
+            await limpeza.Corretores.Where(c => c.Id == corretor.Id).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Slot_indisponivel_sem_alternativas_retorna_409_com_oferta_vazia()
+    {
+        var agora = DateTimeOffset.UtcNow;
+        var conversaId = Guid.NewGuid();
+        Guid leadId;
+        var outroLead = Lead.Novo(agora);
+        var corretor = CriarCorretor(agora);
+
+        var slotReservado = Slot.Novo(corretor.Id, agora.AddDays(1), agora.AddDays(1).AddHours(1));
+        var slotVencido = Slot.Novo(corretor.Id, agora.AddDays(-2), agora.AddDays(-2).AddHours(1));
+
+        await using (var preparacao = await PostgresTestDatabase.CriarContextoAsync())
+        {
+            preparacao.Leads.Add(outroLead);
+            preparacao.Corretores.Add(corretor);
+            preparacao.Slots.AddRange(slotReservado, slotVencido);
+            await preparacao.SaveChangesAsync();
+
+            await preparacao.Slots
+                .Where(s => s.Id == slotReservado.Id && s.LeadId == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.LeadId, outroLead.Id));
+
+            var repo = new ConversaRepositorio(preparacao);
+            var conversa = await repo.ObterOuCriarAsync(conversaId, agora, default);
+            leadId = conversa.LeadId;
+            conversa.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, agora);
+            conversa.Lead.RegistrarContato("Lead Sem Alternativas", "11999990000", null, agora);
+
+            preparacao.Encaminhamentos.Add(
+                Encaminhamento.Novo(conversa.Id, leadId, corretor.Id, corretor.Especialidade, agora));
+
+            await preparacao.SaveChangesAsync();
+        }
+
+        try
+        {
+            await using var db = await PostgresTestDatabase.CriarContextoAsync();
+            var controller = CriarController(db);
+
+            var resReservado = await controller.RegistrarAgendamento(
+                conversaId, new AgendamentoRequest(slotReservado.Id), default);
+            var objReservado = Assert.IsType<ObjectResult>(resReservado.Result);
+            Assert.Equal(StatusCodes.Status409Conflict, objReservado.StatusCode);
+            var problemReservado = Assert.IsType<ProblemDetails>(objReservado.Value);
+            Assert.Equal("horario indisponivel", problemReservado.Title);
+            Assert.Equal("about:blank", problemReservado.Type);
+            Assert.Equal(StatusCodes.Status409Conflict, problemReservado.Status);
+            Assert.Equal("horario_indisponivel", problemReservado.Extensions["codigo"]);
+            var ofertaReservado = Assert.IsAssignableFrom<IReadOnlyList<SlotOferecido>>(problemReservado.Extensions["oferta"]);
+            Assert.NotNull(ofertaReservado);
+            Assert.Empty(ofertaReservado);
+
+            var resVencido = await controller.RegistrarAgendamento(
+                conversaId, new AgendamentoRequest(slotVencido.Id), default);
+            var objVencido = Assert.IsType<ObjectResult>(resVencido.Result);
+            Assert.Equal(StatusCodes.Status409Conflict, objVencido.StatusCode);
+            var problemVencido = Assert.IsType<ProblemDetails>(objVencido.Value);
+            Assert.Equal("horario indisponivel", problemVencido.Title);
+            Assert.Equal("about:blank", problemVencido.Type);
+            Assert.Equal(StatusCodes.Status409Conflict, problemVencido.Status);
+            Assert.Equal("horario_indisponivel", problemVencido.Extensions["codigo"]);
+            var ofertaVencido = Assert.IsAssignableFrom<IReadOnlyList<SlotOferecido>>(problemVencido.Extensions["oferta"]);
+            Assert.NotNull(ofertaVencido);
+            Assert.Empty(ofertaVencido);
+
+            await using var verificacao = await PostgresTestDatabase.CriarContextoAsync();
+            var slotReservadoVerif = await verificacao.Slots.SingleAsync(s => s.Id == slotReservado.Id);
+            Assert.Equal(outroLead.Id, slotReservadoVerif.LeadId);
+
+            var slotVencidoVerif = await verificacao.Slots.SingleAsync(s => s.Id == slotVencido.Id);
+            Assert.Null(slotVencidoVerif.LeadId);
 
             var totalMensagens = await verificacao.Mensagens.CountAsync(m => m.ConversaId == conversaId);
             Assert.Equal(0, totalMensagens);
@@ -438,7 +548,83 @@ public sealed class AgendamentoPorBotaoPostgresTeste
             await limpeza.Encaminhamentos.Where(e => e.ConversaId == conversaId).ExecuteDeleteAsync();
             await limpeza.Conversas.Where(c => c.Id == conversaId).ExecuteDeleteAsync();
             await limpeza.Leads.Where(l => l.Id == leadId).ExecuteDeleteAsync();
-            await limpeza.Corretores.Where(c => c.Id == corretorA.Id || c.Id == corretorB.Id).ExecuteDeleteAsync();
+            var ids = new[] { corretorA.Id, corretorB.Id };
+            await limpeza.Corretores.Where(c => ids.Contains(c.Id)).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Conversa_de_outra_conta_autenticada_retorna_404_e_preserva_slot()
+    {
+        var agora = DateTimeOffset.UtcNow;
+        var conversaId = Guid.NewGuid();
+        Guid leadId;
+        var contaDona = CriarCorretor(agora);
+        var outraConta = CriarCorretor(agora);
+        var corretor = CriarCorretor(agora);
+        var slot = Slot.Novo(corretor.Id, agora.AddDays(1), agora.AddDays(1).AddHours(1));
+
+        await using (var preparacao = await PostgresTestDatabase.CriarContextoAsync())
+        {
+            preparacao.Corretores.AddRange(contaDona, outraConta, corretor);
+            preparacao.Slots.Add(slot);
+
+            var repo = new ConversaRepositorio(preparacao);
+            var conversa = await repo.ObterOuCriarAsync(conversaId, agora, default);
+            leadId = conversa.LeadId;
+            conversa.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, agora);
+            conversa.Lead.RegistrarContato("Lead Outra Conta", "11999998888", null, agora);
+            conversa.VincularConta(contaDona.Id);
+
+            preparacao.Encaminhamentos.Add(
+                Encaminhamento.Novo(conversa.Id, leadId, corretor.Id, corretor.Especialidade, agora));
+
+            await preparacao.SaveChangesAsync();
+        }
+
+        try
+        {
+            await using var db = await PostgresTestDatabase.CriarContextoAsync();
+            var controller = CriarController(db);
+
+            var identity = new ClaimsIdentity(
+                [
+                    new Claim(CorretorAuthenticationDefaults.CorretorIdClaim, outraConta.Id.ToString("D")),
+                    new Claim(ClaimTypes.NameIdentifier, outraConta.Id.ToString("D")),
+                    new Claim(CorretorAuthenticationDefaults.PerfilClaim, PerfisDoPainel.Cliente)
+                ],
+                CorretorAuthenticationDefaults.AuthenticationScheme);
+
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+            };
+
+            var resultado = await controller.RegistrarAgendamento(
+                conversaId, new AgendamentoRequest(slot.Id), default);
+
+            var obj = Assert.IsAssignableFrom<ObjectResult>(resultado.Result);
+            Assert.Equal(StatusCodes.Status404NotFound, obj.StatusCode);
+            var problem = Assert.IsType<ProblemDetails>(obj.Value);
+            Assert.Equal("conversa nao encontrada", problem.Title);
+
+            await using var verificacao = await PostgresTestDatabase.CriarContextoAsync();
+            var slotVerif = await verificacao.Slots.SingleAsync(s => s.Id == slot.Id);
+            Assert.Null(slotVerif.LeadId);
+
+            var totalMensagens = await verificacao.Mensagens.CountAsync(m => m.ConversaId == conversaId);
+            Assert.Equal(0, totalMensagens);
+        }
+        finally
+        {
+            await using var limpeza = await PostgresTestDatabase.CriarContextoAsync();
+            await limpeza.Slots.Where(s => s.CorretorId == corretor.Id).ExecuteDeleteAsync();
+            await limpeza.Mensagens.Where(m => m.ConversaId == conversaId).ExecuteDeleteAsync();
+            await limpeza.Encaminhamentos.Where(e => e.ConversaId == conversaId).ExecuteDeleteAsync();
+            await limpeza.Conversas.Where(c => c.Id == conversaId).ExecuteDeleteAsync();
+            await limpeza.Leads.Where(l => l.Id == leadId).ExecuteDeleteAsync();
+            var idsCorretores = new[] { contaDona.Id, outraConta.Id, corretor.Id };
+            await limpeza.Corretores.Where(c => idsCorretores.Contains(c.Id)).ExecuteDeleteAsync();
         }
     }
 
