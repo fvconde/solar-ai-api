@@ -33,6 +33,10 @@ public sealed record ContatoRequest(
     [StringLength(ContratoContato.LimiteTelefone)] string? Telefone,
     [EmailAddress][StringLength(ContratoContato.LimiteEmail)] string? Email);
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record AgendamentoRequest(
+    [Range(1, long.MaxValue)] long SlotId);
+
 /// <summary>
 /// So o identificador do lead. Devolver o nome gravado contaria a quem digitasse
 /// um telefone alheio de quem ele e.

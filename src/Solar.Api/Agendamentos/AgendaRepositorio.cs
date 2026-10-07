@@ -37,6 +37,28 @@ public sealed class AgendaRepositorio(SolarDbContext db)
                     mensagem.StatusAgendamento == EstadosDoAgendamento.Confirmado,
                 cancellationToken);
 
+    public async Task<SlotOferecido?> ObterHorarioDaConversaAsync(
+        Guid conversaId,
+        long slotId,
+        CancellationToken cancellationToken) =>
+        await db.Slots
+            .AsNoTracking()
+            .Where(slot =>
+                slot.Id == slotId &&
+                db.Encaminhamentos.Any(encaminhamento =>
+                    encaminhamento.ConversaId == conversaId &&
+                    encaminhamento.CorretorId == slot.CorretorId))
+            .Select(slot => new SlotOferecido(slot.Id, slot.Inicio, slot.Fim))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public async Task<AgendamentoDaConversa> ReservarPorBotaoAsync(
+        Guid conversaId,
+        Guid leadId,
+        SlotOferecido horario,
+        DateTimeOffset agora,
+        CancellationToken cancellationToken) =>
+        await ExecutarReservaAsync(conversaId, leadId, horario, agora, cancellationToken);
+
     internal async Task<AgendamentoDaConversa?> ReservarAsync(
         Guid conversaId,
         Guid leadId,
@@ -59,9 +81,19 @@ public sealed class AgendaRepositorio(SolarDbContext db)
             return null;
         }
 
+        return await ExecutarReservaAsync(conversaId, leadId, horario, agora, cancellationToken);
+    }
+
+    private async Task<AgendamentoDaConversa> ExecutarReservaAsync(
+        Guid conversaId,
+        Guid leadId,
+        SlotOferecido horario,
+        DateTimeOffset agora,
+        CancellationToken cancellationToken)
+    {
         var atualizados = await db.Slots
             .Where(slot =>
-                slot.Id == escolhido.Value &&
+                slot.Id == horario.Id &&
                 slot.LeadId == null &&
                 slot.Inicio > agora &&
                 db.Encaminhamentos.Any(encaminhamento =>

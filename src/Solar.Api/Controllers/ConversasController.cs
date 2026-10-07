@@ -223,6 +223,59 @@ public class ConversasController(
         return Ok(new ContatoResponse(leadId, oferta));
     }
 
+    [HttpPost("{id:guid}/agendamentos")]
+    [ProducesResponseType<AgendamentoDaConversa>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AgendamentoDaConversa>> RegistrarAgendamento(
+        Guid id,
+        AgendamentoRequest requisicao,
+        CancellationToken cancellationToken)
+    {
+        using var _ = await travas.TravarAsync(id, cancellationToken);
+
+        var conversa = await conversas.ObterParaEscritaAsync(id, cancellationToken);
+
+        if (conversa is null || !PodeAcessar(conversa))
+        {
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "conversa nao encontrada");
+        }
+
+        if (await agenda.TemAgendamentoConfirmadoAsync(id, cancellationToken))
+        {
+            return Conflito("agendamento_ja_confirmado", "agendamento ja confirmado");
+        }
+
+        if (!conversa.Lead.TemContato)
+        {
+            return Conflito("contato_pendente", "contato pendente");
+        }
+
+        var corretor = await encaminhamentos.CorretorDaConversaAsync(id, cancellationToken);
+        if (corretor is null)
+        {
+            return Conflito("corretor_nao_atribuido", "corretor nao atribuido");
+        }
+
+        var horario = await agenda.ObterHorarioDaConversaAsync(id, requisicao.SlotId, cancellationToken);
+        if (horario is null)
+        {
+            return Problem(statusCode: StatusCodes.Status404NotFound, title: "horario nao encontrado");
+        }
+
+        var agora = DateTimeOffset.UtcNow;
+        var agendamento = await gravacao.SalvarAgendamentoPorBotaoAsync(
+            conversa, horario, corretor, agora, cancellationToken);
+
+        if (agendamento.Estado == EstadosDoAgendamento.Confirmado)
+        {
+            return Ok(agendamento);
+        }
+
+        return Conflito("horario_indisponivel", "horario indisponivel", agendamento.Alternativas);
+    }
+
     /// <summary>Devolve o historico completo e o perfil acumulado da conversa.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType<ConversaResponse>(StatusCodes.Status200OK)]
@@ -418,5 +471,22 @@ public class ConversasController(
         }
 
         return await agenda.OfertarAsync(conversa.Id, agora, cancellationToken);
+    }
+
+    private ObjectResult Conflito(string codigo, string titulo, IReadOnlyList<SlotOferecido>? oferta = null)
+    {
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status409Conflict,
+            Title = titulo,
+            Type = "about:blank"
+        };
+        problem.Extensions["codigo"] = codigo;
+        if (oferta is not null)
+        {
+            problem.Extensions["oferta"] = oferta;
+        }
+
+        return StatusCode(StatusCodes.Status409Conflict, problem);
     }
 }
