@@ -732,7 +732,7 @@ public class PainelController : ControllerBase
             .AsNoTracking()
             .Where(s => s.LeadId == id)
             .OrderBy(s => s.Inicio)
-            .Select(s => new { s.Inicio })
+            .Select(s => new { s.Inicio, s.Fim })
             .FirstOrDefaultAsync(cancellationToken);
 
         var fatores = FatoresDe(lead);
@@ -759,7 +759,7 @@ public class PainelController : ControllerBase
                     encaminhamento.Em),
             slot is null
                 ? null
-                : new AgendamentoPainelResponse(slot.Inicio, EstadosDoAgendamento.Confirmado),
+                : new AgendamentoPainelResponse(slot.Inicio, EstadosDoAgendamento.Confirmado, slot.Fim),
             imoveisSugeridos,
             transcricao);
 

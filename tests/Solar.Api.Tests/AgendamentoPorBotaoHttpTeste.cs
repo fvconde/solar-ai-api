@@ -173,6 +173,7 @@ public sealed class AgendamentoPorBotaoHttpTeste(HttpAgendamentoFixture fixture)
             Assert.NotNull(detalhe.Agendamento);
             Assert.Equal(slot1.Inicio, detalhe.Agendamento.DataHora);
             Assert.Equal(EstadosDoAgendamento.Confirmado, detalhe.Agendamento.Status);
+            Assert.Equal(slot1.Fim, detalhe.Agendamento.Fim);
             Assert.NotNull(detalhe.Encaminhamento);
             Assert.Equal(corretor.Id, detalhe.Encaminhamento.Corretor!.Id);
             Assert.Equal(corretor.Nome, detalhe.Encaminhamento.Corretor.Nome);
@@ -464,6 +465,176 @@ public sealed class AgendamentoPorBotaoHttpTeste(HttpAgendamentoFixture fixture)
             var ids = new[] { contaDona.Id, outraConta.Id, corretor.Id };
             await db.Sessoes.Where(s => ids.Contains(s.CorretorId)).ExecuteDeleteAsync();
             await db.Corretores.Where(c => ids.Contains(c.Id)).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Http_painel_expoe_fim_real_utc_com_duracao_diferente_de_uma_hora_e_nulo_quando_sem_reserva()
+    {
+        var agora = DateTimeOffset.UtcNow;
+        var conversaId1 = Guid.NewGuid();
+        var conversaId2 = Guid.NewGuid();
+        Guid leadId1;
+        Guid leadId2;
+        var corretor = CriarCorretor(agora, "CorretorFimReal");
+        var corretorToken = TokenSeguro.Criar();
+
+        var fusoSp = TimeSpan.FromHours(-3);
+        var agoraSp = agora.ToOffset(fusoSp);
+        var inicioBase = new DateTimeOffset(agoraSp.Year, agoraSp.Month, agoraSp.Day, 15, 0, 0, fusoSp).ToUniversalTime().AddDays(2);
+
+        var slot90Min = Slot.Novo(corretor.Id, inicioBase, inicioBase.AddMinutes(90));
+        var slotExtra1 = Slot.Novo(corretor.Id, inicioBase.AddDays(1), inicioBase.AddDays(1).AddHours(1));
+        var slotExtra2 = Slot.Novo(corretor.Id, inicioBase.AddDays(2), inicioBase.AddDays(2).AddHours(1));
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
+            db.Corretores.Add(corretor);
+            db.Sessoes.Add(SessaoCorretor.Nova(corretor.Id, TokenSeguro.Sha256(corretorToken), agora.AddDays(1)));
+            db.Slots.AddRange(slot90Min, slotExtra1, slotExtra2);
+
+            var repo = new ConversaRepositorio(db);
+
+            var conversa1 = await repo.ObterOuCriarAsync(conversaId1, agora.AddHours(-1), default);
+            leadId1 = conversa1.LeadId;
+            conversa1.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, agora.AddHours(-1));
+            conversa1.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(Nome: "Lead 90Min", PrecoMax: 600000), agora.AddHours(-1));
+
+            var turnoHandoff1 = new TurnoResponse(
+                "Encaminhando lead 1...",
+                Intencoes.Compra,
+                new CamposExtraidos(),
+                ProximasAcoes.DirecionarEspecialista,
+                [],
+                null,
+                EssenciaisCompletos: true);
+            conversa1.RegistrarTurno("Quero agendar visita", turnoHandoff1, agora.AddHours(-1));
+            conversa1.RegistrarCorretorAtribuido(agora.AddHours(-1));
+            db.Encaminhamentos.Add(
+                Encaminhamento.Novo(conversa1.Id, leadId1, corretor.Id, corretor.Especialidade, agora.AddHours(-1)));
+
+            var conversa2 = await repo.ObterOuCriarAsync(conversaId2, agora.AddHours(-1), default);
+            leadId2 = conversa2.LeadId;
+            conversa2.Lead.RegistrarConsentimento(AvisoPrivacidade.VersaoAtual, agora.AddHours(-1));
+            conversa2.Lead.Fundir(Intencoes.Compra, new CamposExtraidos(Nome: "Lead Sem Agendamento", PrecoMax: 400000), agora.AddHours(-1));
+
+            var turnoHandoff2 = new TurnoResponse(
+                "Encaminhando lead 2...",
+                Intencoes.Compra,
+                new CamposExtraidos(),
+                ProximasAcoes.DirecionarEspecialista,
+                [],
+                null,
+                EssenciaisCompletos: true);
+            conversa2.RegistrarTurno("Quero informacoes", turnoHandoff2, agora.AddHours(-1));
+            conversa2.RegistrarCorretorAtribuido(agora.AddHours(-1));
+            db.Encaminhamentos.Add(
+                Encaminhamento.Novo(conversa2.Id, leadId2, corretor.Id, corretor.Especialidade, agora.AddHours(-1)));
+
+            await db.SaveChangesAsync();
+        }
+
+        try
+        {
+            using var clientPublico = fixture.Factory.CreateClient();
+            using var clientCorretor = fixture.Factory.CreateClient();
+            clientCorretor.DefaultRequestHeaders.Add("Cookie", $"{CorretorAuthenticationDefaults.CookieName}={corretorToken}");
+
+            using var respAntes = await clientCorretor.GetAsync($"/api/painel/leads/{leadId1:D}");
+            Assert.Equal(HttpStatusCode.OK, respAntes.StatusCode);
+            var jsonAntes = await respAntes.Content.ReadAsStringAsync();
+            using (var docAntes = JsonDocument.Parse(jsonAntes))
+            {
+                Assert.Equal(JsonValueKind.Null, docAntes.RootElement.GetProperty("agendamento").ValueKind);
+            }
+
+            using var respContato = await clientPublico.PostAsJsonAsync(
+                $"/conversas/{conversaId1:D}/contato",
+                new ContatoRequest("Lead 90Min", "11999990090", "lead90@teste.local"));
+            Assert.Equal(HttpStatusCode.OK, respContato.StatusCode);
+
+            using var respAgendamento = await clientPublico.PostAsJsonAsync(
+                $"/conversas/{conversaId1:D}/agendamentos",
+                new AgendamentoRequest(slot90Min.Id));
+            Assert.Equal(HttpStatusCode.OK, respAgendamento.StatusCode);
+
+            var jsonAgendamento = await respAgendamento.Content.ReadAsStringAsync();
+            var agendamentoResp = JsonSerializer.Deserialize<AgendamentoDaConversa>(
+                jsonAgendamento,
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            Assert.NotNull(agendamentoResp);
+            Assert.Equal(EstadosDoAgendamento.Confirmado, agendamentoResp.Estado);
+            Assert.NotNull(agendamentoResp.Horario);
+            Assert.Equal(slot90Min.Id, agendamentoResp.Horario.Id);
+            Assert.Equal(slot90Min.Inicio, agendamentoResp.Horario.Inicio);
+            Assert.Equal(slot90Min.Fim, agendamentoResp.Horario.Fim);
+
+            using var respDetalhe = await clientCorretor.GetAsync($"/api/painel/leads/{leadId1:D}");
+            Assert.Equal(HttpStatusCode.OK, respDetalhe.StatusCode);
+            var jsonDetalhe = await respDetalhe.Content.ReadAsStringAsync();
+
+            using var docDetalhe = JsonDocument.Parse(jsonDetalhe);
+            var agendamentoEl = docDetalhe.RootElement.GetProperty("agendamento");
+            Assert.Equal(JsonValueKind.Object, agendamentoEl.ValueKind);
+
+            Assert.True(agendamentoEl.TryGetProperty("dataHora", out var propDataHora));
+            Assert.True(agendamentoEl.TryGetProperty("status", out var propStatus));
+            Assert.Equal(EstadosDoAgendamento.Confirmado, propStatus.GetString());
+
+            Assert.True(agendamentoEl.TryGetProperty("fim", out var propFim));
+
+            var fimStr = propFim.GetString();
+            Assert.NotNull(fimStr);
+            var fimUtc = DateTimeOffset.Parse(fimStr);
+            Assert.Equal(TimeSpan.Zero, fimUtc.Offset);
+            Assert.Equal(slot90Min.Fim, fimUtc);
+            Assert.NotEqual(slot90Min.Inicio.AddHours(1), fimUtc);
+            Assert.Equal(TimeSpan.FromMinutes(90), fimUtc - slot90Min.Inicio);
+
+            var dataHoraUtc = DateTimeOffset.Parse(propDataHora.GetString()!);
+            Assert.Equal(TimeSpan.Zero, dataHoraUtc.Offset);
+            Assert.Equal(slot90Min.Inicio, dataHoraUtc);
+
+            var detalheDto = JsonSerializer.Deserialize<DetalheLeadPainelResponse>(
+                jsonDetalhe,
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            Assert.NotNull(detalheDto);
+            Assert.NotNull(detalheDto.Agendamento);
+            Assert.Equal(slot90Min.Inicio, detalheDto.Agendamento.DataHora);
+            Assert.Equal(EstadosDoAgendamento.Confirmado, detalheDto.Agendamento.Status);
+            Assert.Equal(slot90Min.Fim, detalheDto.Agendamento.Fim);
+            Assert.NotEqual(detalheDto.Agendamento.DataHora.AddHours(1), detalheDto.Agendamento.Fim);
+
+            using var respLeadSemReserva = await clientCorretor.GetAsync($"/api/painel/leads/{leadId2:D}");
+            Assert.Equal(HttpStatusCode.OK, respLeadSemReserva.StatusCode);
+            var jsonLeadSemReserva = await respLeadSemReserva.Content.ReadAsStringAsync();
+            using var docLeadSemReserva = JsonDocument.Parse(jsonLeadSemReserva);
+            Assert.Equal(JsonValueKind.Null, docLeadSemReserva.RootElement.GetProperty("agendamento").ValueKind);
+
+            await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
+                var slotNoBanco = await db.Slots.AsNoTracking().SingleAsync(s => s.Id == slot90Min.Id);
+                Assert.Equal(leadId1, slotNoBanco.LeadId);
+                Assert.Equal(slot90Min.Inicio, slotNoBanco.Inicio);
+                Assert.Equal(slot90Min.Fim, slotNoBanco.Fim);
+                Assert.Equal(TimeSpan.FromMinutes(90), slotNoBanco.Fim - slotNoBanco.Inicio);
+                Assert.NotEqual(slotNoBanco.Inicio.AddHours(1), slotNoBanco.Fim);
+            }
+
+            Assert.Equal(0, fixture.AgenteHandler.Chamadas);
+        }
+        finally
+        {
+            await using var scope = fixture.Factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<SolarDbContext>();
+            await db.Slots.Where(s => s.CorretorId == corretor.Id).ExecuteDeleteAsync();
+            await db.Encaminhamentos.Where(e => e.CorretorId == corretor.Id).ExecuteDeleteAsync();
+            await db.Conversas.Where(c => c.Id == conversaId1 || c.Id == conversaId2).ExecuteDeleteAsync();
+            await db.Leads.Where(l => l.Id == leadId1 || l.Id == leadId2).ExecuteDeleteAsync();
+            await db.Sessoes.Where(s => s.CorretorId == corretor.Id).ExecuteDeleteAsync();
+            await db.Corretores.Where(c => c.Id == corretor.Id).ExecuteDeleteAsync();
         }
     }
 
