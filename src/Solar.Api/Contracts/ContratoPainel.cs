@@ -78,7 +78,8 @@ public sealed record EncaminhamentoPainelResponse(
 
 public sealed record AgendamentoPainelResponse(
     DateTimeOffset DataHora,
-    string Status);
+    string Status,
+    DateTimeOffset Fim);
 
 public sealed record TranscricaoPainelResponse(
     string Papel,
