@@ -33,11 +33,17 @@ public sealed record ContatoRequest(
     [StringLength(ContratoContato.LimiteTelefone)] string? Telefone,
     [EmailAddress][StringLength(ContratoContato.LimiteEmail)] string? Email);
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record AgendamentoRequest(
+    [Range(1, long.MaxValue)] long SlotId);
+
 /// <summary>
 /// So o identificador do lead. Devolver o nome gravado contaria a quem digitasse
 /// um telefone alheio de quem ele e.
 /// </summary>
-public sealed record ContatoResponse(Guid LeadId);
+public sealed record ContatoResponse(
+    Guid LeadId,
+    IReadOnlyList<SlotOferecido> Oferta);
 
 public static class EstadosDoAgendamento
 {
@@ -89,7 +95,8 @@ public sealed record ConversaResponse(
     IReadOnlyList<MensagemDaConversa> Mensagens,
     bool ContatoPendente,
     DateTimeOffset? ConsentimentoEm,
-    string? VersaoAvisoPrivacidade);
+    string? VersaoAvisoPrivacidade,
+    IReadOnlyList<SlotOferecido> Oferta);
 
 /// <summary>Resultado da exclusao de dados do lead.</summary>
 public sealed record ExclusaoLeadResultado(
