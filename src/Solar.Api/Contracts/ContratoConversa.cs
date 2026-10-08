@@ -43,7 +43,8 @@ public sealed record AgendamentoRequest(
 /// </summary>
 public sealed record ContatoResponse(
     Guid LeadId,
-    IReadOnlyList<SlotOferecido> Oferta);
+    IReadOnlyList<SlotOferecido> Oferta,
+    DateTimeOffset? ContatoEm = null);
 
 public static class EstadosDoAgendamento
 {
@@ -96,7 +97,8 @@ public sealed record ConversaResponse(
     bool ContatoPendente,
     DateTimeOffset? ConsentimentoEm,
     string? VersaoAvisoPrivacidade,
-    IReadOnlyList<SlotOferecido> Oferta);
+    IReadOnlyList<SlotOferecido> Oferta,
+    DateTimeOffset? ContatoEm = null);
 
 /// <summary>Resultado da exclusao de dados do lead.</summary>
 public sealed record ExclusaoLeadResultado(
