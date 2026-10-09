@@ -220,7 +220,7 @@ public class ConversasController(
 
         var oferta = await OfertarAgendamentoAsync(conversa, agora, cancellationToken);
 
-        return Ok(new ContatoResponse(leadId, oferta));
+        return Ok(new ContatoResponse(leadId, oferta, conversa.Lead.ContatoEm));
     }
 
     [HttpPost("{id:guid}/agendamentos")]
@@ -308,7 +308,8 @@ public class ConversasController(
             !conversa.Lead.TemContato,
             conversa.Lead.ConsentimentoEm,
             conversa.Lead.VersaoAvisoPrivacidade,
-            oferta));
+            oferta,
+            conversa.Lead.ContatoEm));
     }
 
     /// <summary>

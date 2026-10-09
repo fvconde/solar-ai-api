@@ -41,6 +41,57 @@ public class LeadTeste
 
         Assert.Equal(StatusDoLead.Novo, lead.Status);
         Assert.False(lead.TemContato);
+        Assert.Null(lead.ContatoEm);
+    }
+
+    [Fact]
+    public void Novo_sem_contato_tem_ContatoEm_nulo()
+    {
+        var lead = Lead.Novo(Agora);
+
+        Assert.Null(lead.ContatoEm);
+    }
+
+    [Fact]
+    public void RegistrarContato_grava_exatamente_em()
+    {
+        var lead = Lead.Novo(Agora);
+        var instanteContato = Agora.AddHours(2);
+
+        lead.RegistrarContato("Ana", "11999998888", "ana@solar.local", instanteContato);
+
+        Assert.Equal(instanteContato, lead.ContatoEm);
+    }
+
+    [Fact]
+    public void RegistrarContato_nova_gravacao_atualiza_a_data()
+    {
+        var lead = Lead.Novo(Agora);
+        var primeiroContato = Agora.AddHours(1);
+        var segundoContato = Agora.AddHours(3);
+
+        lead.RegistrarContato("Ana", "11999998888", "ana@solar.local", primeiroContato);
+        Assert.Equal(primeiroContato, lead.ContatoEm);
+
+        lead.RegistrarContato("Ana Silva", "11999998888", "ana.silva@solar.local", segundoContato);
+        Assert.Equal(segundoContato, lead.ContatoEm);
+    }
+
+    [Fact]
+    public void Clonar_mantem_a_data_original_junto_ao_contato()
+    {
+        var lead = Lead.Novo(Agora);
+        var instanteContato = Agora.AddHours(1);
+        var instanteClonagem = Agora.AddHours(5);
+
+        lead.RegistrarContato("Ana", "11999998888", "ana@solar.local", instanteContato);
+
+        var clone = lead.Clonar(instanteClonagem);
+
+        Assert.Equal(instanteContato, clone.ContatoEm);
+        Assert.Equal(instanteClonagem, clone.CriadoEm);
+        Assert.Equal(instanteClonagem, clone.AtualizadoEm);
+        Assert.NotEqual(clone.CriadoEm, clone.ContatoEm);
     }
 
     [Fact]

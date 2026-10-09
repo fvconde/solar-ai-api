@@ -57,6 +57,8 @@ public sealed class Lead
 
     public DateTimeOffset AtualizadoEm { get; private set; }
 
+    public DateTimeOffset? ContatoEm { get; private set; }
+
     public DateTimeOffset? ConsentimentoEm { get; private set; }
 
     public string? VersaoAvisoPrivacidade { get; private set; }
@@ -90,6 +92,7 @@ public sealed class Lead
         Score = Score,
         CriadoEm = em,
         AtualizadoEm = em,
+        ContatoEm = ContatoEm,
         ConsentimentoEm = ConsentimentoEm,
         VersaoAvisoPrivacidade = VersaoAvisoPrivacidade,
     };
@@ -119,6 +122,7 @@ public sealed class Lead
         Nome = Contato.Nome(nome) ?? Nome;
         Telefone = Contato.Telefone(telefone) ?? Telefone;
         Email = Contato.Email(email) ?? Email;
+        ContatoEm = em;
         AtualizadoEm = em;
     }
 
