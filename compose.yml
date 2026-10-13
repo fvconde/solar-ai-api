@@ -1,11 +1,15 @@
-# Fragmento do solar-ai-api: a API e o banco que ela possui.
+# Ambiente local do Solar: Postgres + API (.NET) + agente da Lia (Python).
 #
-# Roda sozinho -- `docker compose up` aqui sobe Postgres + API, sem precisar dos
-# outros repos. E o que o pipeline de CI/CD deste repositorio (S-27) vai usar.
+# Rodar daqui:   docker compose up --build
 #
-# O ambiente completo dos tres servicos e montado pelo solar-ai-docs, que
-# inclui este arquivo. Sem `name:` de proposito: assim o projeto Compose e o de
-# quem inclui, e os servicos entram todos na mesma rede.
+# O agente e descrito pelo proprio repositorio dele, clonado ao lado deste
+# (../solar-ai). Incluir o fragmento, em vez de subir dois composes, coloca os
+# tres servicos na mesma rede: a API chama o agente por http://agente:8000.
+
+name: solar
+
+include:
+  - ../solar-ai/compose.yml
 
 services:
   postgres:
@@ -46,6 +50,9 @@ services:
       # silenciosa que ja aconteceu uma vez, porque o .env tinha a chave e o
       # compose nao a repassava.
       SEGURANCA__CHAVEPRIVACIDADE: ${SEGURANCA__CHAVEPRIVACIDADE:?defina SEGURANCA__CHAVEPRIVACIDADE no .env do solar-ai-api}
+      # Senha do supervisor semeado (supervisor.vinculado@solar.local), aplicada
+      # so no primeiro boot. Vazia = ninguem entra no painel.
+      Semente__SenhaSupervisor: ${SEMENTE__SENHASUPERVISOR:-}
       Metricas__JanelaRespostaFollowUpDias: ${METRICAS__JANELARESPOSTAFOLLOWUPDIAS:-7}
       SOLAR_VERSION: ${SOLAR_VERSION:-dev}
     ports:
