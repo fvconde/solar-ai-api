@@ -277,6 +277,7 @@ public class PainelTeste
         var colecaoServicos = new ServiceCollection();
         colecaoServicos.AddLogging();
         colecaoServicos.AddSingleton(db);
+        colecaoServicos.AddSingleton<TimeProvider>(new RelogioDeTeste());
         colecaoServicos.AddAuthentication(CorretorAuthenticationDefaults.AuthenticationScheme)
             .AddScheme<AuthenticationSchemeOptions, CorretorAuthenticationHandler>(
                 CorretorAuthenticationDefaults.AuthenticationScheme,
